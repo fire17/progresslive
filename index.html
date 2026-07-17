@@ -355,18 +355,68 @@ table.proof td.c-res { color: var(--green); }
   border-radius: 8px; padding: 9px 18px; cursor: pointer; }
 .si-card button:hover { filter: brightness(1.06); }
 
-/* ================= responsive ================= */
+/* ================= responsive — the phone IS a first-class instrument ================= */
 @media (max-width: 780px) {
   .strip-main { grid-template-columns: 1fr; }
-  .channels { border-left: none; border-top: 1px solid var(--faint); }
-  .fleet a { grid-template-columns: 1fr auto; }
+  .channels { border-left: none; border-top: 1px solid var(--faint); padding: 12px 14px; }
+  .sharebig { width: 100%; padding: 12px 14px; font-size: 13px; }   /* thumb-first */
+  .chan { min-height: 34px; flex-wrap: wrap; }
+  /* KPIs: one swipeable line — phases deserve the fold */
+  .kpis { padding: 12px 14px; display: flex; flex-wrap: nowrap; gap: 0 22px; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .kpis::-webkit-scrollbar { display: none; }
+  .kpi { min-width: max-content; flex: none; }
+  .sharebig { flex: 1; width: auto; }
+  .strip-build { flex-direction: column; gap: 4px; align-items: flex-start; }
+  .strip-build > span:last-child { margin-left: 0 !important; }
+
+  .fleet a { grid-template-columns: 1fr auto; gap: 6px 12px; padding: 14px 12px; }
   .fleet .fbar, .fleet .lastev { grid-column: 1 / -1; }
   .fleet .pmeta { text-align: left; }
-  .phase { grid-template-columns: 6.5ch 1fr 4.5ch 7.5ch; row-gap: 2px; }
-  .phase .bar { grid-column: 1 / -1; order: 10; margin-top: 3px; }
-  .phase .eta { grid-column: 1 / 2; }
-  .phase .note { grid-column: 2 / -1; }
-  .feed li { grid-template-columns: 7ch 12px 1fr; gap: 8px; }
+  .fleet .spark { display: none; }   /* pulse lives on the project page; row stays scannable */
+
+  /* phase row → two-line stack: [key · label · chips · pct] / [bar] / [meta] */
+  .phase { grid-template-columns: auto 1fr auto; gap: 3px 10px; padding: 10px 8px; min-height: 44px; }
+  .phase .key { grid-column: 1; }
+  .phase .lbl { grid-column: 2; }
+  .phase .pct { grid-column: 3; font-size: 14px; font-weight: 650; color: var(--ink); }
+  .phase .bar { grid-column: 1 / -1; order: 5; height: 10px; margin-top: 2px; }
+  .phase .st { grid-column: 1; order: 6; }
+  .phase .eta { grid-column: 2 / -1; order: 7; text-align: left; overflow: visible; white-space: normal; }
+  .phase .note { grid-column: 1 / -1; order: 8; }
+  /* SHOW information — wrap notes to two lines instead of hover-hiding them */
+  .phase .note, .phase .note .note { white-space: normal; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+  .phase.sub { padding: 7px 8px 7px 14px; min-height: 38px; }
+  .youarehere { order: 9; text-align: left; padding-top: 4px; }
+
+  .agent { width: 100%; justify-content: flex-start; min-height: 44px; }
+  .agent .acur { max-width: none; flex-basis: 100%; white-space: normal; }
+  .aitem { grid-template-columns: auto 1fr auto; gap: 2px 8px; padding: 5px 0; }
+  .aitem .key { grid-column: 1; } .aitem .lbl { grid-column: 2; white-space: normal; }
+  .aitem .pct { grid-column: 3; }
+  .aitem .bar { grid-column: 1 / -1; height: 6px; }
+  .aitem .st { grid-column: 1; } .aitem .note { grid-column: 2 / -1; white-space: normal; }
+
+  .feed li { grid-template-columns: 12px 1fr auto; gap: 6px 10px; padding: 9px 0; }
+  .feed .edot { grid-column: 1; grid-row: 1; }
+  .feed .etext { grid-column: 2 / -1; grid-row: 1; }
+  .feed .ets { grid-column: 3; grid-row: 2; justify-self: end; opacity: 0.8; }
+  .chips input { flex: 1; min-width: 12ch; }
+  .proj-head { gap: 8px 12px; }
+  .proj-head .copybtn { margin-left: auto; }
+  .proj-head .spark { display: none; }
+}
+@media (max-width: 480px) {
+  .wrap { padding-inline: 12px; }
+  .top-in { gap: 9px; }
+  .wordmark span, .wordmark { font-size: 14px; }
+  #conn .lbl { display: none; }             /* dot + age tell the story */
+  .view-title { font-size: 19px; }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .phase .key { font-size: 11.5px; }
+  table.proof { font-size: 11.5px; }
+  table.proof th, table.proof td { padding-right: 8px; }
 }
 /* ================= motion off ================= */
 @media (prefers-reduced-motion: reduce) {
@@ -893,6 +943,19 @@ addEventListener("mouseover", e => {
   tipEl.style.left = x + "px"; tipEl.style.top = y + "px";
 });
 addEventListener("scroll", () => tipEl.classList.remove("on"), true);
+/* touch: tap a non-interactive data-tip element → show the tip briefly (hover has no finger) */
+addEventListener("click", e => {
+  if (!matchMedia("(hover: none)").matches) return;
+  const el = e.target.closest("[data-tip]");
+  if (!el || !el.dataset.tip || el.closest("a, button, .rbtn, .sharebig")) return;
+  tipEl.textContent = el.dataset.tip;
+  tipEl.classList.add("on");
+  const r = el.getBoundingClientRect();
+  tipEl.style.left = Math.max(8, Math.min(r.left, innerWidth - Math.min(tipEl.offsetWidth, innerWidth - 16) - 8)) + "px";
+  tipEl.style.top = (r.bottom + 8 + tipEl.offsetHeight > innerHeight ? r.top - tipEl.offsetHeight - 8 : r.bottom + 8) + "px";
+  clearTimeout(tipEl._t);
+  tipEl._t = setTimeout(() => tipEl.classList.remove("on"), 2600);
+});
 
 /* copy board as fire17-style ASCII report */
 function copyReport(slug) {
