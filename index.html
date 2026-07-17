@@ -405,6 +405,15 @@ const seenEv = new Set(); let firstRender = true;
 
 /* ---------- remote backend (progress.akeyo.io shell → local machine via tunnel) ---------- */
 const REMOTE = !["localhost", "127.0.0.1", ""].includes(location.hostname);
+/* magic share link: ?b=<backend>&t=<token>#/slug — ingest once, persist, then strip the
+   credentials from the address bar (they stay out of subsequent copies/screenshots) */
+{
+  const q = new URLSearchParams(location.search);
+  if (q.get("b")) localStorage.plApi = q.get("b").trim();
+  if (q.get("t")) localStorage.plTok = q.get("t").trim();
+  if (q.get("b") || q.get("t"))
+    history.replaceState(null, "", location.pathname + location.hash);
+}
 const API = REMOTE ? (localStorage.plApi || "").replace(/\/$/, "") : "";
 const TOKEN = REMOTE ? (localStorage.plTok || "") : "";
 const authHeaders = () => TOKEN ? { "Authorization": "Bearer " + TOKEN } : {};
@@ -787,6 +796,9 @@ function remoteCard() {
       <span class="cdot pub" style="background:var(--muted)"></span>
       <span style="font-weight:600">token</span><span class="curl mono">${esc(n)} · ${esc(t.slice(0, 4))}…</span>
       <button class="rbtn" style="border-color:var(--faint);color:var(--muted)" onclick="copyTxt('${esc(t)}','token ${esc(n)}')">⧉ copy</button>
+      ${RINFO.tunnel_url ? `<button class="rbtn" style="border-color:var(--green-bar);color:var(--green)"
+        data-tip="one link, signs straight in: ${esc(RINFO.shell)}?b=…&t=…${esc(location.hash || "")}"
+        onclick="copyTxt('${esc(RINFO.shell)}?b=${encodeURIComponent(RINFO.tunnel_url)}&t=${encodeURIComponent(t)}${esc(location.hash || "")}','share link (${esc(n)})')">⧉ share link</button>` : ""}
     </span>`).join("")}`;
 }
 
