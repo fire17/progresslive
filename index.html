@@ -779,7 +779,7 @@ function armStream() {
 armStream();
 
 addEventListener("hashchange", () => { FILTER.kind = "all"; FILTER.q = ""; render(); });
-poll(); setInterval(poll, REMOTE ? 5000 : 1500);   // SSE is the fast path; poll is the net
+poll(); setInterval(poll, REMOTE ? 2000 : 1500);   // SSE fast path where proxies allow; 2s ETag poll is the net (304 = 0 bytes)
 </script>
 </body>
 </html>
