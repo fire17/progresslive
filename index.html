@@ -165,7 +165,9 @@ section.blk { margin-bottom: 40px; }
 .phase.here { background: var(--tint); }
 .phase .key { font-weight: 700; font-size: 12.5px; white-space: nowrap; }
 .phase.here .key { color: var(--green); }
-.phase .lbl { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phase .lbl { font-size: 13px; display: flex; align-items: center; min-width: 0; }
+.phase .lbl .lbltxt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.phase .lbl .newchip, .phase .lbl .testchip { flex: none; }
 .phase .note { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; cursor: default; }
 .phase .pct { font-size: 12.5px; text-align: right; color: var(--muted); }
@@ -191,6 +193,14 @@ section.blk { margin-bottom: 40px; }
 .phase.sub .bar { height: 6px; opacity: 0.9; }
 .subcount { color: var(--muted); font-size: 10.5px; border: 1px solid var(--faint);
   border-radius: 999px; padding: 1px 7px; }
+.newchip { font: 700 9px ui-monospace, monospace; letter-spacing: 0.06em; color: var(--bg);
+  background: var(--green-bar); border-radius: 999px; padding: 1.5px 6px; margin-left: 6px;
+  animation: pulse 2.2s ease-in-out infinite; vertical-align: 1px; }
+.phase.test, .phase.sub.test { background: repeating-linear-gradient(45deg, transparent 0 8px, oklch(75% 0.12 300 / 0.08) 8px 16px); }
+.phase.test .key, .phase.sub.test .key { color: oklch(55% 0.18 300); }
+.testchip { font: 700 9px ui-monospace, monospace; letter-spacing: 0.06em; color: oklch(45% 0.2 300);
+  border: 1px dashed oklch(60% 0.18 300); border-radius: 999px; padding: 1px 6px; margin-left: 6px; }
+@media (prefers-color-scheme: dark) { .phase.test .key, .phase.sub.test .key, .testchip { color: oklch(78% 0.14 300); } }
 
 .roster { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
 .agent { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--faint);
@@ -503,6 +513,10 @@ function tickConn() {
 setInterval(tickConn, 1000);
 
 /* ---------- renderers ---------- */
+const isNew = o => o.born && (Date.now() - Date.parse(o.born)) < 30 * 60 * 1000;
+const isTest = o => /^TEST/i.test(o.key || "") || /^TEST/i.test(o.label || "");
+const newChip = o => isNew(o) ? `<span class="newchip" data-tip="added ${fmtAge(ageOf(o.born))}">NEW</span>` : "";
+const testChip = o => isTest(o) ? `<span class="testchip">TEST</span>` : "";
 function barHtml(pct, status, extraCls) {
   return `<div class="bar st-${esc(status)} ${extraCls||""}" role="img" aria-label="${pct}% ${esc(status)}">
     <b style="--p:${(pct||0)/100}"></b></div>`;
@@ -546,11 +560,11 @@ function renderProject(slug) {
       const sKey = prefix + "." + s.key;
       const kids = s.subitems || [];
       const kOpen = EXPANDED.set.has(sKey) || (!EXPANDED.touched.has(sKey) && s.status === "now");
-      return `<li class="phase sub d${Math.min(depth, 4)} ${SUBS_ANIM ? "anim" : ""} ${kids.length ? "has-subs" : ""}"
+      return `<li class="phase sub d${Math.min(depth, 4)} ${SUBS_ANIM ? "anim" : ""} ${kids.length ? "has-subs" : ""} ${isTest(s) ? "test" : ""}"
         ${kids.length ? `onclick="toggleSubs('${esc(sKey)}')" role="button" aria-expanded="${kOpen}" tabindex="0"
           onkeydown="if(event.key==='Enter')toggleSubs('${esc(sKey)}')"` : ""}>
         <span class="key mono">${"·".repeat((depth - 1) * 2)}${kids.length ? `<span class="tw ${kOpen ? "open" : ""}">▸</span>` : "└ "}${esc(s.key)}</span>
-        <span class="lbl" data-tip="${esc(s.label)}">${esc(s.label)}</span>
+        <span class="lbl" data-tip="${esc(s.label)}"><span class="lbltxt">${esc(s.label)}</span>${newChip(s)}${testChip(s)}</span>
         ${barHtml(s.pct, s.status)}
         <span class="pct mono ${s.status === "now" ? "hot" : ""}">${s.pct}%</span>
         <span class="st s-${esc(s.status)}">${esc(s.status.toUpperCase())}</span>
@@ -562,11 +576,11 @@ function renderProject(slug) {
       </li>${kOpen ? subTree(kids, depth + 1, sKey) : ""}`;
     }).join("");
     const subRows = open ? subTree(subs, 1, xKey) : "";
-    return `<li class="phase ${isHere ? "here" : ""} ${subs.length ? "has-subs" : ""}"
+    return `<li class="phase ${isHere ? "here" : ""} ${subs.length ? "has-subs" : ""} ${isTest(ph) ? "test" : ""}"
       ${subs.length ? `onclick="toggleSubs('${esc(xKey)}')" role="button" aria-expanded="${open}" tabindex="0"
         onkeydown="if(event.key==='Enter')toggleSubs('${esc(xKey)}')"` : ""}>
       <span class="key mono">${subs.length ? `<span class="tw ${open ? "open" : ""}">▸</span>` : ""}${esc(ph.key)}</span>
-      <span class="lbl" data-tip="${esc(ph.label)}">${esc(ph.label)}</span>
+      <span class="lbl" data-tip="${esc(ph.label)}"><span class="lbltxt">${esc(ph.label)}</span>${newChip(ph)}${testChip(ph)}</span>
       ${barHtml(ph.pct, ph.status)}
       <span class="pct mono ${ph.status === "now" ? "hot" : ""}">${ph.pct}%</span>
       <span class="st s-${esc(ph.status)}">${esc(ph.status.toUpperCase())}</span>
