@@ -9,7 +9,12 @@ argument-hint: "<project slug + one-line description (defaults to current repo)>
 This skill reproduces, for the session it runs in, the tracking cell first built for
 AgentWorkAtlas on 2026-07-17. Platform lives at `~/Creations/ProgressLive` (own git repo).
 
-## The founding vision (fire17, verbatim — preserved in ProgressLive/VISION.md, sha256 1665124a…)
+> **Disambiguation (2026-07-17):** this is the LEGACY member of the family — `/progresslive`
+> (spawner) + `/progresslive-runner` (role) are the canonical pair; when both could match a
+> request, `/progresslive` wins. This skill now delegates to them (below) so capabilities
+> never diverge.
+
+## The founding vision (fire17, verbatim — preserved in ProgressLive/VISION.md; founding-BLOCK sha256 1665124a… — the block between the first two `---` separators; the whole-file hash drifts as verbatim addenda append)
 
 > "make sure the agent can update what i see in realtime - so i know when i look at the
 > site that i see everything (make sure it can both update or append update messages, so
@@ -49,36 +54,27 @@ python3 progress.py board  <slug>          # ANSI print
 python3 progress.py serve  --port 8177    # site + JSON API (check: lsof -ti:8177 — may already run)
 ```
 
-## Procedure
+## Procedure (delegates to the canonical pair — capabilities never diverge)
 
 1. If port 8177 already serves ProgressLive, reuse it; else start `serve` in background.
-2. Spawn the resident tracker via the Agent tool — **EXPLICIT `model: "opus"`. NEVER Fable**
-   (rule 4, ~/Creations/CLAUDE.md: Fable is the one-of-a-kind main-session orchestrator;
-   spawns always carry an explicit non-Fable model). Prompt template below.
-3. Confirm its first report line reads `MODEL: <id>` and the board renders at
-   `http://localhost:8177/#/<slug>` — then hand fire17 the URL (`open` it).
+2. Read the spawn model from `~/Creations/ProgressLive/runner.config.json` (`model` key —
+   the ONE source of truth for the whole family; default sonnet). **NEVER Fable** (rule 4,
+   ~/Creations/CLAUDE.md). 🔴 CHECKPOINT: config read + slug non-empty before spawning.
+3. Spawn via the Agent tool with the prompt template below — it activates
+   `/progresslive-runner`, which carries ALL duties (seed/strip/reside/comms/ask-parent/
+   scope-add/swarm-visibility/honesty/escalation). Do not re-embed duties here.
+4. Confirm first report line `MODEL: <id>` (matches config) and the board renders at
+   `http://localhost:8177/#/<slug>` — then hand fire17 the URL (`open` it). Either check
+   failing → respawn once; still failing → STOP and report which verification failed.
 
 ## Spawn prompt template (fill <>)
 
 ```
-You are the PROGRESS resident for <project>. FIRST line of every report: MODEL: <your model id>.
-Mission: keep ~/Creations/ProgressLive/projects/<slug>/ truthful in realtime.
-1. Seed: register <slug> (progress.py init) if absent; build phases/roster/proof ONLY from
-   verified sources — git log of <repo> (real timestamps as milestone events), the shared
-   TaskList, files on disk. Label every estimate "estimate". Never invent progress.
-2. Reside: poll `git -C <repo> log --oneline` + TaskList every few minutes (Monitor tool or
-   270s loop); translate REAL deltas into `progress.py update/event/roster/proof`.
-3. Comms: the orchestrator SendMessages you milestone deltas — push to the board within
-   seconds; SendMessage back when you need state.
-   ASK-PARENT PATTERN (standing duty): at every phase transition, ASK your parent/lead
-   (SendMessage) for the current phase's sub-structure — real subitems w/ pct/status each —
-   and mirror them as phase.subitems (expand/collapse on the site). Ask; never invent
-   decomposition. Refine subitems whenever the parent pushes deltas.
-4. Honesty laws: numbers from evidence only; blocked-on-user phases marked blocked/gated;
-   the site's live/stale badge must never lie (it derives from meta.updated — just write truth).
-5. Escalation clause: if you are struggling or blocked >15min, SAY SO to your lead and stop
-   — never fake movement on the board.
-Data contract + CLI: read ~/.claude/skills/dev-progress/SKILL.md and ~/Creations/ProgressLive/README.md.
+Activate the Skill tool with skill "progresslive-runner" as your FIRST action — it is
+your role and carries all duties. You are the PROGRESS resident for <slug> (<repo>).
+Parent agent: me — SendMessage me your MODEL line, ask-parent queries, and escalations.
+Serve/reuse localhost:8177, seed from verified state only, open the board, then reside.
+First line of every report: MODEL: <your model id>.
 ```
 
 ## Laws inherited by every spawn

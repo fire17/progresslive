@@ -7,6 +7,9 @@ argument-hint: "<project slug + one-line description (defaults to current repo)>
 # /progresslive — stand up live tracking for THIS project
 
 You are the MAIN agent. Do not become the tracker — SPAWN it, then keep working.
+(Disambiguation: /progresslive vs /dev-progress — near-identical triggers, ONE
+implementation: /dev-progress is the legacy alias family and now defers here; when both
+could match, THIS skill wins.)
 
 ## Procedure
 
@@ -15,13 +18,16 @@ You are the MAIN agent. Do not become the tracker — SPAWN it, then keep workin
    model/harness later = edit that file, nothing else.
 2. **Slug**: from the argument, else current repo dir-name lowercased.
 3. **Spawn** via the Agent tool: name `progresslive-<slug>`, EXPLICIT `model` from config,
-   prompt below. Tmux attachability requires the session was launched with
-   `--teammate-mode tmux`; if absent, spawn proceeds paneless — note the downgrade
-   honestly, never fake a pane. (`--resume` silently drops the flag — relaunch fresh
-   if panes matter.)
+   prompt below. 🔴 CHECKPOINT before spawning: config was READ (model value in hand, not
+   assumed) AND slug is non-empty — a bad value here propagates into a live agent. Tmux
+   attachability requires the session was launched with `--teammate-mode tmux`; if absent,
+   spawn proceeds paneless — note the downgrade honestly, never fake a pane. (`--resume`
+   silently drops the flag — relaunch fresh if panes matter.)
 4. **Verify**: first report line must read `MODEL: <id>` (matching config, not Fable) and
    the board must render at `http://localhost:8177/#/<slug>`. Missing either → respawn
-   once, then escalate.
+   once; still failing → STOP: SendMessage/report to the user naming exactly which
+   verification failed and mark the tracking task blocked — never proceed on an
+   unverified tracker.
 5. **Feed it**: SendMessage it milestone deltas as you work; answer its ask-parent
    queries (phase sub-structure) with REAL decomposition. It pushes everything to the
    site within seconds.
@@ -46,3 +52,20 @@ then reside per the runner skill's duties. First line of every report: MODEL: <y
 Explicit model on the spawn always; never Fable. Nothing published without the user's
 explicit go. The runner's honesty laws are in /progresslive-runner — do not weaken them
 in the spawn prompt.
+
+## Swarm visibility (fire17 directive 2026-07-17 — VISION addendum, verbatim there)
+
+When you (main agent) run a tmux swarm, the runner must see INSIDE it (numbering
+continues the Procedure + scope-add law above):
+7. **Tell the runner its swarm** on spawn + every roster change: tmux session name +
+   socket (`claude-swarm-<pid>`), team name, and each subagent's name/model/lane/pane as
+   you spawn them (SendMessage). The runner cannot monitor what it cannot name.
+8. **Give every spawned subagent the status-drop duty** (2 prompt lines, near-zero
+   tokens): "On every state change append one JSON line
+   {ts,state,pct,current,note} (state ∈ working|parked|waiting|blocked|done|finished)
+   to ~/.progresslive/swarm/<slug>/<your-name>.jsonl". Direct file drops — no relay
+   through you, no message round-trips; SendMessage stays for escalations only.
+9. Runner observes the rest machine-side at ZERO model tokens (`progress.py swarm-scan`:
+   drops + tmux list-panes + pane liveness) and renders per-agent status glyphs +
+   progress bars + arbitrarily-nested subitems (`--sub A.B.C…`). Token economics: you
+   push milestones; drops carry state; the model only writes when something CHANGED.

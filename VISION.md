@@ -13,3 +13,7 @@ in parralel - make a reactive and realtime updating (that a subagent manages as 
 > Source: fire17 → orchestrator → PROGRESS lane teammate brief, 2026-07-17.
 > The vision text above is the constitution of this project.
 > sha256 recorded in `.deify/vision.sha256`.
+
+## Addendum — the swarm-visibility directive (fire17 verbatim, 2026-07-17 ~16:20)
+
+-  please add to the our skills and all references in godmodes or other places that the main agent running /progresslive (or the mcp version) should tell the /progresslive-runner subagent of the tmuxmode swarm it and all other subagents are in, so that it can monior the tmux session itself, and also get data that it should display about each subagent, their current status (working, parked, waiting, done, finished, etc) with their own progress bars items or nested (more than 2 levels possibly) subitems, and the runner should be able to communitcate with those somehow like the main agent (not sure if through the main agent or directly is better) to be able to gather and understand what each of them is really upto for any momemnt - be smart about this - we need to be both efficient with our tokens but also display and be able to let the user see everything that is going on under the hood - even within subagents - activate these skills again /highest-bar /impeccable  - then do everthing - polish everything - and make sure nothing is missed

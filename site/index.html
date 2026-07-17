@@ -201,6 +201,20 @@ section.blk { margin-bottom: 40px; }
 .agent.blocked .adot { background: var(--clay-bar); }
 .agent .aname { font-weight: 650; }
 .agent .amodel, .agent .alane { color: var(--muted); font-size: 11.5px; }
+.agent.waiting .adot { background: var(--amber-bar); animation: pulse 2.2s ease-in-out infinite; }
+.agent.parked .adot { background: var(--amber-bar); animation: none; }
+.agent.blocked .adot { background: var(--clay-bar); }
+.agent.finished .adot { background: var(--green-bar); }
+.agent .abar { width: 54px; height: 5px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.agent .abar b { display: block; height: 100%; background: var(--green-bar); transform-origin: left;
+  transform: scaleX(var(--p, 0)); transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.agent .apct { font-size: 10.5px; color: var(--muted); }
+.agent .acur { color: var(--muted); font-size: 11px; max-width: 24ch; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.agent .asince { color: var(--muted); font-size: 10px; }
+.phase.sub.d2 { min-height: 22px; } .phase.sub.d2 .lbl, .phase.sub.d3 .lbl { font-size: 11.5px; }
+.phase.sub.d2 .bar, .phase.sub.d3 .bar, .phase.sub.d4 .bar { height: 5px; opacity: 0.85; }
+.phase.sub.d3, .phase.sub.d4 { min-height: 20px; }
 
 table.proof { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 table.proof th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
@@ -500,15 +514,26 @@ function renderProject(slug) {
     const xKey = slug + ":" + ph.key;
     if (isHere && !EXPANDED.touched.has(xKey)) EXPANDED.set.add(xKey);   // here-phase opens by default
     const open = EXPANDED.set.has(xKey);
-    const subRows = open ? subs.map(s => `<li class="phase sub ${SUBS_ANIM ? "anim" : ""}">
-      <span class="key mono">└ ${esc(s.key)}</span>
-      <span class="lbl" data-tip="${esc(s.label)}">${esc(s.label)}</span>
-      ${barHtml(s.pct, s.status)}
-      <span class="pct mono ${s.status === "now" ? "hot" : ""}">${s.pct}%</span>
-      <span class="st s-${esc(s.status)}">${esc(s.status.toUpperCase())}</span>
-      <span class="eta mono" data-tip="${esc(s.eta || "")}">${esc(s.eta || "")}</span>
-      <span class="note" data-tip="${esc(s.note || "")}">${linkify(s.note || "")}</span>
-    </li>`).join("") : "";
+    const subTree = (list, depth, prefix) => list.map(s => {
+      const sKey = prefix + "." + s.key;
+      const kids = s.subitems || [];
+      const kOpen = EXPANDED.set.has(sKey) || (!EXPANDED.touched.has(sKey) && s.status === "now");
+      return `<li class="phase sub d${Math.min(depth, 4)} ${SUBS_ANIM ? "anim" : ""} ${kids.length ? "has-subs" : ""}"
+        ${kids.length ? `onclick="toggleSubs('${esc(sKey)}')" role="button" aria-expanded="${kOpen}" tabindex="0"
+          onkeydown="if(event.key==='Enter')toggleSubs('${esc(sKey)}')"` : ""}>
+        <span class="key mono">${"·".repeat((depth - 1) * 2)}${kids.length ? `<span class="tw ${kOpen ? "open" : ""}">▸</span>` : "└ "}${esc(s.key)}</span>
+        <span class="lbl" data-tip="${esc(s.label)}">${esc(s.label)}</span>
+        ${barHtml(s.pct, s.status)}
+        <span class="pct mono ${s.status === "now" ? "hot" : ""}">${s.pct}%</span>
+        <span class="st s-${esc(s.status)}">${esc(s.status.toUpperCase())}</span>
+        <span class="eta mono" data-tip="${esc(s.eta || "")}">${esc(s.eta || "")}</span>
+        <span class="note" style="display:flex;align-items:center;gap:8px">
+          <span class="note" style="flex:1" data-tip="${esc(s.note || "")}">${linkify(s.note || "")}</span>
+          ${kids.length ? `<span class="subcount mono">${kids.filter(k => k.status === "done").length}/${kids.length}</span>` : ""}
+        </span>
+      </li>${kOpen ? subTree(kids, depth + 1, sKey) : ""}`;
+    }).join("");
+    const subRows = open ? subTree(subs, 1, xKey) : "";
     return `<li class="phase ${isHere ? "here" : ""} ${subs.length ? "has-subs" : ""}"
       ${subs.length ? `onclick="toggleSubs('${esc(xKey)}')" role="button" aria-expanded="${open}" tabindex="0"
         onkeydown="if(event.key==='Enter')toggleSubs('${esc(xKey)}')"` : ""}>
@@ -526,10 +551,16 @@ function renderProject(slug) {
     </li>${subRows}`;
   }).join("");
 
-  const roster = b.roster.length ? `<section class="blk"><h2>agents · <b>${b.roster.filter(r => r.state === "building").length} active</b> · ${b.roster.length} total</h2>
-    <ul class="roster">${b.roster.map(r => `<li class="agent ${esc(r.state)}">
-      <span class="adot"></span><span class="aname">${esc(r.name)}</span>
-      <span class="amodel mono">${esc(r.model)}</span><span class="alane">${esc(r.lane)}</span></li>`).join("")}
+  const GLYPH = { working: "●", building: "●", parked: "⏸", waiting: "◔", blocked: "✕", done: "✓", finished: "✓" };
+  const active = b.roster.filter(r => ["working", "building", "waiting"].includes(r.state)).length;
+  const roster = b.roster.length ? `<section class="blk"><h2>agents · <b>${active} active</b> · ${b.roster.length} total</h2>
+    <ul class="roster">${b.roster.map(r => `<li class="agent ${esc(r.state)}" ${r.current ? `data-tip="${esc(r.current)}"` : ""}>
+      <span class="adot" data-g="${GLYPH[r.state] || "·"}"></span><span class="aname">${esc(r.name)}</span>
+      <span class="amodel mono">${esc(r.model)}</span><span class="alane">${esc(r.lane)}</span>
+      ${r.pct != null ? `<span class="abar"><b style="--p:${r.pct / 100}"></b></span><span class="apct mono">${r.pct}%</span>` : ""}
+      ${r.current ? `<span class="acur">${esc(r.current)}</span>` : ""}
+      ${r.since ? `<span class="asince mono" data-age-iso="${esc(r.since)}"></span>` : ""}
+    </li>`).join("")}
     </ul></section>` : "";
 
   const proof = b.proof.length ? `<section class="blk"><h2>proof — <b>what was actually run</b></h2>
@@ -655,7 +686,7 @@ function stripHtml(slug, p, b, ov) {
   const generic = [
     { label: "overall", value: ov + "%" },
     { label: "phases done", value: `${done}/${b.phases.length}` },
-    { label: "agents active", value: b.roster.filter(r => r.state === "building").length },
+    { label: "agents active", value: b.roster.filter(r => ["working", "building", "waiting"].includes(r.state)).length },
     { label: "events", value: p.events.length },
     { label: "started", value: (b.meta.started || "").slice(5, 10) || "—" },
   ];

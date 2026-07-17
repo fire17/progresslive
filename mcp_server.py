@@ -188,6 +188,9 @@ def call(name, a):
                   f'You are the PROGRESS resident for {a["slug"]}. Parent agent: the session that spawned you — '
                   f'SendMessage it your MODEL line, ask-parent queries, and escalations. Serve/reuse '
                   f'localhost:{cfg.get("port", 8177)}, seed from verified state only, open the board, then reside. '
+                  f'Swarm visibility: ask the parent for the tmux session/socket/team + subagent roster, then cron '
+                  f'`python3 progress.py swarm-scan {a["slug"]} --session <s>` (60-120s, zero-token); subagents '
+                  f'report via status-drop files per the runner skill. '
                   f'First line of every report: MODEL: <your model id>.')
         return json.dumps({"spawn": {"tool": "Agent", "name": f"progresslive-{a['slug']}",
                                      "model": cfg.get("model", "sonnet"), "never": "fable",

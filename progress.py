@@ -121,15 +121,26 @@ def cmd_update(a):
         ph = {"key": a.phase, "label": a.label or a.phase, "pct": 0, "status": "queued", "eta": None, "note": ""}
         b["phases"].append(ph)
     if getattr(a, "sub", None):
-        subs = ph.setdefault("subitems", [])
-        t = next((s for s in subs if s["key"] == a.sub), None)
-        if t is None:
-            t = {"key": a.sub, "label": a.label or a.sub, "pct": 0, "status": "queued", "eta": None, "note": ""}
-            subs.append(t)
+        # dotted path = arbitrary nesting: --sub UXE.E2E.SMOKE creates/updates down the tree
+        node, path = ph, []
+        for part in a.sub.split("."):
+            subs = node.setdefault("subitems", [])
+            nxt = next((s for s in subs if s["key"] == part), None)
+            if nxt is None:
+                nxt = {"key": part, "label": (a.label or part) if part == a.sub.split(".")[-1] else part,
+                       "pct": 0, "status": "queued", "eta": None, "note": ""}
+                subs.append(nxt)
+            node, _ = nxt, path.append(part)
+        t = node
         old = _apply_fields(t, a)
-        # honest rollup: phase pct = mean of subitem pcts (explicit --pct on the phase later overrides)
-        ph["pct"] = round(sum(s["pct"] for s in subs) / len(subs))
-        name = f"{ph['key']} ▸ {t['key']}"
+
+        def rollup(n):  # honest recursive rollup: parent pct = mean of children
+            for s in n.get("subitems", []):
+                rollup(s)
+            if n.get("subitems"):
+                n["pct"] = round(sum(s["pct"] for s in n["subitems"]) / len(n["subitems"]))
+        rollup(ph)
+        name = f"{ph['key']} ▸ {' ▸ '.join(path)}"
     else:
         t = ph
         old = _apply_fields(t, a)
@@ -161,6 +172,8 @@ def cmd_event(a):
     print(f"appended {ev['kind']} @ {ev['ts']}")
 
 
+AGENT_STATES = ("working", "building", "parked", "waiting", "blocked", "done", "finished", "gone")
+
 def cmd_roster(a):
     b = load_board(a.slug)
     if a.clear:
@@ -171,8 +184,73 @@ def cmd_roster(a):
         b["roster"] = [r for r in b["roster"] if r["name"] != name]
         if state != "gone":
             b["roster"].append({"name": name, "model": model, "lane": lane, "state": state or "building"})
+    if getattr(a, "agent", None):
+        # rich single-agent upsert: swarm-visibility fields (state/pct/current/pane)
+        r = next((r for r in b["roster"] if r["name"] == a.agent), None)
+        if a.state == "gone" and r:
+            b["roster"].remove(r)
+        else:
+            if r is None:
+                r = {"name": a.agent, "model": "", "lane": "", "state": "working"}
+                b["roster"].append(r)
+            for k in ("model", "lane", "state", "current", "pane"):
+                v = getattr(a, k, None)
+                if v is not None:
+                    r[k] = v
+            if a.pct is not None:
+                r["pct"] = max(0, min(100, a.pct))
+            r["since"] = now_iso()
     save_board(a.slug, b)
-    print(f"{a.slug} roster: " + ", ".join(f"{r['name']}({r['state']})" for r in b["roster"]))
+    print(f"{a.slug} roster: " + ", ".join(f"{r['name']}({r['state']}{'' if r.get('pct') is None else ' ' + str(r['pct']) + '%'})" for r in b["roster"]))
+
+
+def cmd_swarm_scan(a):
+    """ZERO-LLM-token swarm observation: tmux panes + status-drop files + cship snapshots
+    → machine-derived roster states. Runner cron-runs this; no model in the loop."""
+    import subprocess, glob
+    b = load_board(a.slug)
+    seen = {}
+    # 1. status drops (subagents append one JSON line per state change)
+    drops = Path.home() / ".progresslive" / "swarm" / a.slug
+    for f in sorted(drops.glob("*.jsonl")) if drops.exists() else []:
+        try:
+            last = json.loads(f.read_text().splitlines()[-1])
+            seen[f.stem] = {"state": last.get("state", "working"), "pct": last.get("pct"),
+                            "current": last.get("current"), "src": "drop", "ts": last.get("ts")}
+        except (IndexError, json.JSONDecodeError):
+            pass
+    # 2. tmux panes (if a session was declared)
+    if a.session:
+        r = subprocess.run(["tmux", "-L", a.socket, "list-panes", "-s", "-t", a.session,
+                            "-F", "#{pane_id}|#{pane_title}|#{pane_dead}|#{pane_current_command}"]
+                           if a.socket else
+                           ["tmux", "list-panes", "-s", "-t", a.session,
+                            "-F", "#{pane_id}|#{pane_title}|#{pane_dead}|#{pane_current_command}"],
+                           capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            pane, title, dead, cmd = (line.split("|") + ["", "", ""])[:4]
+            agent = next((x["name"] for x in b["roster"] if x["name"] in title), None)
+            if agent:
+                s = seen.setdefault(agent, {})
+                s["pane"] = pane
+                if dead == "1":
+                    s.setdefault("state", "finished")
+    changed = []
+    for name, s in seen.items():
+        r = next((r for r in b["roster"] if r["name"] == name), None)
+        if r is None:
+            r = {"name": name, "model": "", "lane": "", "state": "working"}
+            b["roster"].append(r)
+        delta = {k: v for k, v in s.items() if k in ("state", "pct", "current", "pane") and v is not None and r.get(k) != v}
+        if delta:
+            r.update(delta)
+            r["since"] = now_iso()
+            changed.append(f"{name}:{delta}")
+    if changed:
+        save_board(a.slug, b)
+        append_event(a.slug, "update", "swarm scan: " + "; ".join(changed)[:300], delta="machine-derived")
+    print(f"swarm-scan {a.slug}: {len(seen)} observed, {len(changed)} changed"
+          + (f" ({'; '.join(changed)[:200]})" if changed else ""))
 
 
 def cmd_proof(a):
@@ -511,9 +589,17 @@ def main():
     p.add_argument("--kind", default="note", choices=KINDS); p.add_argument("--delta")
     p.set_defaults(f=cmd_event)
 
-    p = sub.add_parser("roster", help="set agents: --set name:model:lane:state (state 'gone' removes)")
+    p = sub.add_parser("roster", help="set agents: --set name:model:lane:state (bulk) or --agent NAME w/ rich fields (state 'gone' removes)")
     p.add_argument("slug"); p.add_argument("--set", action="append"); p.add_argument("--clear", action="store_true")
+    p.add_argument("--agent"); p.add_argument("--model"); p.add_argument("--lane")
+    p.add_argument("--state", choices=AGENT_STATES); p.add_argument("--pct", type=int)
+    p.add_argument("--current", help="what the agent is doing right now"); p.add_argument("--pane")
     p.set_defaults(f=cmd_roster)
+
+    p = sub.add_parser("swarm-scan", help="zero-token swarm observation: status drops + tmux panes → roster")
+    p.add_argument("slug"); p.add_argument("--session", help="tmux session name")
+    p.add_argument("--socket", help="tmux -L socket (e.g. claude-swarm-<pid>)")
+    p.set_defaults(f=cmd_swarm_scan)
 
     p = sub.add_parser("proof", help="record a verified claim")
     p.add_argument("slug"); p.add_argument("--claim", required=True); p.add_argument("--cmd")
