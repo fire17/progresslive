@@ -201,8 +201,21 @@ def cmd_board(a):
 
 # ---------------- state assembly + server ----------------
 
+def state_sig():
+    """Cheap change signature: stats only, zero parsing. Feeds the 304 fast path."""
+    sig = []
+    if PROJECTS.exists():
+        for f in sorted(PROJECTS.glob("*/*")):
+            if f.is_file():
+                st = f.stat()
+                sig.append(f"{f.parent.name}/{f.name}:{st.st_mtime_ns}:{st.st_size}")
+    site_v = str((SITE / "index.html").stat().st_mtime_ns)
+    return hashlib.sha1("|".join(sig).encode()).hexdigest()[:16] + "-" + site_v[-6:], site_v
+
+
 def assemble_state(tail=200):
-    projects, sig = {}, []
+    etag, site_v = state_sig()
+    projects = {}
     if PROJECTS.exists():
         for d in sorted(PROJECTS.iterdir()):
             bp, ep = d / "board.json", d / "events.jsonl"
@@ -219,12 +232,8 @@ def assemble_state(tail=200):
                         events.append(json.loads(line))
                     except json.JSONDecodeError:
                         pass
-                sig.append(f"{ep.stat().st_mtime_ns}:{ep.stat().st_size}")
-            sig.append(f"{bp.stat().st_mtime_ns}")
             projects[d.name] = {"board": board, "events": events}
-    etag = hashlib.sha1("|".join(sig).encode()).hexdigest()[:16]
-    site_v = str((SITE / "index.html").stat().st_mtime_ns)
-    return {"projects": projects, "server_ts": now_iso(), "site_v": site_v}, etag + "-" + site_v[-6:]
+    return {"projects": projects, "server_ts": now_iso(), "site_v": site_v}, etag
 
 
 def cmd_setjson(a):
@@ -397,12 +406,14 @@ def cmd_serve(a):
                 elif path == "/api/stream":
                     self.do_stream()
                 elif path == "/api/state":
-                    state, etag = assemble_state()
+                    etag, _ = state_sig()  # stat-only — idle polls never parse JSON
                     if self.headers.get("If-None-Match") == etag:
                         self.send_response(304)
                         self.send_header("ETag", etag)
+                        self._cors()
                         self.end_headers()
                         return
+                    state, etag = assemble_state()
                     self._send(200, json.dumps(state, ensure_ascii=False).encode(), "application/json", {"ETag": etag})
                 elif path == "/api/links":
                     self._send(200, json.dumps(links_status()).encode(), "application/json")
