@@ -616,7 +616,19 @@ function toggleSubs(xKey) {
 }
 
 /* ---------- control strip: KPIs · channels (probe + restart) · build ---------- */
-let LINKS = {};
+let LINKS = {}, RINFO = null;
+async function pollRemoteInfo() {
+  if (REMOTE) return;  // local board only — the endpoint doesn't exist through the tunnel
+  try {
+    const r = await fetch("/api/remote-info");
+    if (r.ok) { const fresh = await r.json();
+      if (JSON.stringify(fresh) !== JSON.stringify(RINFO)) { RINFO = fresh; LAST_HTML = ""; render(); }
+    }
+  } catch (e) {}
+}
+setInterval(pollRemoteInfo, 30000); pollRemoteInfo();
+const copyTxt = (t, what) => navigator.clipboard.writeText(t).then(() => toast(what + " copied"));
+
 async function pollLinks() {
   if (REMOTE && (!API || !TOKEN)) return;
   try { LINKS = await (await fetch(API + "/api/links", {headers: authHeaders()})).json(); } catch (e) {}
@@ -672,7 +684,7 @@ function stripHtml(slug, p, b, ov) {
   return `<div class="strip">
     <div class="strip-main">
       <div class="kpis">${kpis}</div>
-      <div class="channels">${locals}${pubs}
+      <div class="channels">${locals}${pubs}${slug === "progresslive" && RINFO && !REMOTE ? remoteCard() : ""}
         ${!locals && !pubs ? `<span class="chan" style="color:var(--muted)">no channels registered</span>` : ""}</div>
     </div>
     <div class="strip-build mono">
@@ -681,6 +693,29 @@ function stripHtml(slug, p, b, ov) {
       <span style="margin-left:auto">manager: ${esc(b.meta.manager || "—")}</span>
     </div>
   </div>`;
+}
+
+function remoteCard() {
+  const up = RINFO.tunnel_up;
+  const toks = Object.entries(RINFO.tokens || {});
+  return `<span class="chan">
+      <span class="cdot pub"></span>
+      <a href="${esc(RINFO.shell)}" target="_blank" rel="noopener">progress.akeyo.io</a>
+      <span class="curl">remote shell — sign in with ↓</span>
+    </span>
+    <span class="chan">
+      <span class="cdot ${up ? "up" : "down"}"></span>
+      <span style="font-weight:600">backend</span>
+      ${RINFO.tunnel_url ? `<span class="curl mono" data-tip="${esc(RINFO.tunnel_url)}">${esc(RINFO.tunnel_url.replace(/^https:\/\//, ""))}</span>
+        <span class="cstate ${up ? "up" : "down"}">${up ? "ONLINE" : "DOWN"}</span>
+        <button class="rbtn" style="border-color:var(--faint);color:var(--muted)" onclick="copyTxt('${esc(RINFO.tunnel_url)}','backend url')">⧉ copy</button>`
+      : `<span class="curl">no tunnel detected</span>`}
+    </span>
+    ${toks.map(([n, t]) => `<span class="chan">
+      <span class="cdot pub" style="background:var(--muted)"></span>
+      <span style="font-weight:600">token</span><span class="curl mono">${esc(n)} · ${esc(t.slice(0, 4))}…</span>
+      <button class="rbtn" style="border-color:var(--faint);color:var(--muted)" onclick="copyTxt('${esc(t)}','token ${esc(n)}')">⧉ copy</button>
+    </span>`).join("")}`;
 }
 
 async function restartLink(slug, label, btn) {
