@@ -427,7 +427,11 @@ async function poll() {
       OFFLINE = false;
       render();
     } else if (r.status === 304 && OFFLINE) { OFFLINE = false; tickConn(); }
-  } catch (e) { if (!OFFLINE) { OFFLINE = true; tickConn(); } }
+  } catch (e) {
+    if (!OFFLINE) { OFFLINE = true; tickConn(); }
+    // remote shell with a dead backend and nothing rendered yet → surface sign-in with the why
+    if (REMOTE && !STATE) showSignin("backend unreachable — the tunnel URL may have rotated; paste the current one");
+  }
 }
 
 const overall = b => b.phases.length ? Math.round(b.phases.reduce((a, p) => a + p.pct, 0) / b.phases.length) : 0;
