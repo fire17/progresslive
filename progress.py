@@ -207,6 +207,55 @@ def cmd_roster(a):
     print(f"{a.slug} roster: " + ", ".join(f"{r['name']}({r['state']}{'' if r.get('pct') is None else ' ' + str(r['pct']) + '%'})" for r in b["roster"]))
 
 
+def cmd_ingest(a):
+    """Apply a STATUS-REPLY (SIP JSON) mechanically — the runner never interprets prose.
+    Shape: {phases:[{key,label?,pct?,status?,eta?,note?,subitems:[…recursive]}],
+            roster:[{name,model?,lane?,state?,pct?,current?,pane?,items?}],
+            events:[{kind,text,delta?}], proof:[{claim,cmd?,result?,ref?}]}"""
+    payload = json.loads(Path(a.file).read_text() if a.file else a.json)
+    b = load_board(a.slug)
+
+    def upsert_tree(parent_list, spec):
+        node = next((s for s in parent_list if s["key"] == spec["key"]), None)
+        if node is None:
+            node = {"key": spec["key"], "label": spec.get("label", spec["key"]),
+                    "pct": 0, "status": "queued", "eta": None, "note": ""}
+            parent_list.append(node)
+        for k in ("label", "pct", "status", "eta", "note"):
+            if k in spec:
+                node[k] = spec[k] if k != "pct" else max(0, min(100, spec[k]))
+        for child in spec.get("subitems", []):
+            upsert_tree(node.setdefault("subitems", []), child)
+        if node.get("subitems"):
+            node["pct"] = round(sum(s["pct"] for s in node["subitems"]) / len(node["subitems"]))
+
+    n = {"phases": 0, "roster": 0, "events": 0, "proof": 0}
+    for spec in payload.get("phases", []):
+        upsert_tree(b["phases"], spec)
+        n["phases"] += 1
+    if payload.get("here"):
+        b["here"] = payload["here"]
+    for spec in payload.get("roster", []):
+        r = next((r for r in b["roster"] if r["name"] == spec["name"]), None)
+        if r is None:
+            r = {"name": spec["name"], "model": "", "lane": "", "state": "working"}
+            b["roster"].append(r)
+        for k in ("model", "lane", "state", "pct", "current", "pane", "items"):
+            if k in spec:
+                r[k] = spec[k]
+        r["since"] = now_iso()
+        n["roster"] += 1
+    for spec in payload.get("proof", []):
+        b["proof"].append({"claim": spec["claim"], "cmd": spec.get("cmd", ""),
+                           "result": spec.get("result", ""), "ref": spec.get("ref", ""), "ts": now_iso()})
+        n["proof"] += 1
+    save_board(a.slug, b)
+    for spec in payload.get("events", []):
+        append_event(a.slug, spec.get("kind", "update"), spec["text"], delta=spec.get("delta"))
+        n["events"] += 1
+    print(f"ingested {a.slug}: phases={n['phases']} roster={n['roster']} events={n['events']} proof={n['proof']}")
+
+
 def cmd_swarm_scan(a):
     """ZERO-LLM-token swarm observation: tmux panes + status-drop files + cship snapshots
     → machine-derived roster states. Runner cron-runs this; no model in the loop."""
@@ -608,6 +657,10 @@ def main():
     p.add_argument("--current", help="what the agent is doing right now"); p.add_argument("--pane")
     p.add_argument("--items", help="JSON array: the agent's own work tree [{key,label,pct,status,note,subitems?}]")
     p.set_defaults(f=cmd_roster)
+
+    p = sub.add_parser("ingest", help="apply a SIP status-reply JSON (phases/subitems/roster/events/proof) mechanically")
+    p.add_argument("slug"); p.add_argument("--json"); p.add_argument("--file", help="path to SIP JSON")
+    p.set_defaults(f=cmd_ingest)
 
     p = sub.add_parser("swarm-scan", help="zero-token swarm observation: status drops + tmux panes → roster")
     p.add_argument("slug"); p.add_argument("--session", help="tmux session name")

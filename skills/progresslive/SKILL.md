@@ -65,7 +65,14 @@ continues the Procedure + scope-add law above):
    {ts,state,pct,current,note} (state ∈ working|parked|waiting|blocked|done|finished)
    to ~/.progresslive/swarm/<slug>/<your-name>.jsonl". Direct file drops — no relay
    through you, no message round-trips; SendMessage stays for escalations only.
-9. Runner observes the rest machine-side at ZERO model tokens (`progress.py swarm-scan`:
+9. **Answer SIP asks in SIP JSON — never prose** (fire17: the runner must not guess).
+   When the runner sends `SIP REQUEST <slug>`, reply with ONLY the status-reply JSON
+   (shape in /progresslive-runner's SIP section): your real work tree, fine-grained,
+   nested as deep as truth requires — it applies mechanically via `progress.py ingest`.
+   Push the same format proactively at every milestone/phase transition/scope-add so
+   asks stay rare. Prose answers force the runner to interpret = the guessing fire17
+   banned.
+10. Runner observes the rest machine-side at ZERO model tokens (`progress.py swarm-scan`:
    drops + tmux list-panes + pane liveness) and renders per-agent status glyphs +
    progress bars + arbitrarily-nested subitems (`--sub A.B.C…`). Token economics: you
    push milestones; drops carry state; the model only writes when something CHANGED.

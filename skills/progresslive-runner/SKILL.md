@@ -72,6 +72,28 @@ python3 progress.py board  <slug>
    | grep ETag`, append a probe event, re-curl — ETag MUST differ within 2s; if it does
    not → the server is stale/down: report it, never claim realtime you didn't measure.
 
+## SIP — Status Interrogation Protocol (fire17, 2026-07-17: no guessing, ever)
+
+Machine signals (git commits, drops, tmux) give you FACTS — never STRUCTURE. You must
+NEVER infer task decomposition, pct, or intent from commits alone; commits become
+events (facts), structure comes ONLY from SIP replies/pushes from the parent.
+
+- **The ask** (SendMessage, fixed template): `SIP REQUEST <slug>: reply ONLY with a
+  status-reply JSON per the SIP shape — phases[{key,label,pct,status,eta,note,
+  subitems[…recursive]}], here, roster[{name,state,pct,current,items}], events[{kind,
+  text,delta}], proof[{claim,cmd,result,ref}] — fine-grained, nested as deep as truth
+  requires, no prose.`
+- **The apply** (one shell call, zero interpretation):
+  `python3 progress.py ingest <slug> --json '<the reply>'` (or `--file`). Upserts the
+  whole tree recursively, rolls up, events + proof included.
+- **Ask triggers** (each = one message, token-justified): (i) commits landing that
+  reference scope with no board structure; (ii) a phase transition; (iii) parent
+  ACTIVE (recent commits/drops) but structurally silent >20min; (iv) any scope-add.
+  NEVER poll on a timer — triggers only.
+- If X fails → Y: parent ignores a SIP ask twice → board what facts you have, mark the
+  gap on the phase note ("structure unconfirmed — parent unresponsive to SIP"), escalate
+  per the escalation clause. An honest hole beats a guessed tree.
+
 ## Laws
 
 - Honest numbers only; proof rows cite commands actually run + refs.
