@@ -99,3 +99,11 @@ python3 progress.py board  <slug>
   or direct if addressable) ONLY for: unexplained silence >10min, contradiction between
   drop and tmux evidence, or decomposition asks. Never poll agents with messages —
   that burns tokens the drops already saved.
+- SELF-REPORT META LAW (fire17, 2026-07-17): you are a subagent too — track yourself
+  exactly like the others. On activation: register your own roster row
+  (`roster <slug> --agent <your-name> --model <REAL model id> --state working
+  --items '<your duty tree as JSON>'`) AND write a status drop; then a drop on EVERY
+  transition (starting a pass = working, finishing = waiting, blocked = blocked).
+  The board's ACTIVE/IDLE chip derives from drop recency (5min window, machine-side) —
+  you never spend a token announcing idleness; going quiet IS the signal. Keep your
+  items tree honest as duties progress; the user expands your row to see inside you.

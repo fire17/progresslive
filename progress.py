@@ -199,7 +199,10 @@ def cmd_roster(a):
                     r[k] = v
             if a.pct is not None:
                 r["pct"] = max(0, min(100, a.pct))
+            if getattr(a, "items", None):
+                r["items"] = json.loads(a.items)  # per-agent work tree: [{key,label,pct,status,note,subitems?...}]
             r["since"] = now_iso()
+            r["seen"] = now_iso()
     save_board(a.slug, b)
     print(f"{a.slug} roster: " + ", ".join(f"{r['name']}({r['state']}{'' if r.get('pct') is None else ' ' + str(r['pct']) + '%'})" for r in b["roster"]))
 
@@ -216,7 +219,8 @@ def cmd_swarm_scan(a):
         try:
             last = json.loads(f.read_text().splitlines()[-1])
             seen[f.stem] = {"state": last.get("state", "working"), "pct": last.get("pct"),
-                            "current": last.get("current"), "src": "drop", "ts": last.get("ts")}
+                            "current": last.get("current"), "src": "drop", "ts": last.get("ts"),
+                            "seen": last.get("ts")}  # drop recency drives the ACTIVE/idle chip (machine-derived)
         except (IndexError, json.JSONDecodeError):
             pass
     # 2. tmux panes (if a session was declared)
@@ -236,18 +240,23 @@ def cmd_swarm_scan(a):
                 if dead == "1":
                     s.setdefault("state", "finished")
     changed = []
+    seen_changed = False
     for name, s in seen.items():
         r = next((r for r in b["roster"] if r["name"] == name), None)
         if r is None:
             r = {"name": name, "model": "", "lane": "", "state": "working"}
             b["roster"].append(r)
+        if s.get("seen") and r.get("seen") != s["seen"]:
+            r["seen"] = s["seen"]  # freshness updates silently — never an event, never a wake
+            seen_changed = True
         delta = {k: v for k, v in s.items() if k in ("state", "pct", "current", "pane") and v is not None and r.get(k) != v}
         if delta:
             r.update(delta)
             r["since"] = now_iso()
             changed.append(f"{name}:{delta}")
-    if changed:
+    if changed or seen_changed:
         save_board(a.slug, b)
+    if changed:
         append_event(a.slug, "update", "swarm scan: " + "; ".join(changed)[:300], delta="machine-derived")
     if changed or not a.quiet:
         # --quiet: total silence when nothing changed — inside a Monitor, a printed line
@@ -597,6 +606,7 @@ def main():
     p.add_argument("--agent"); p.add_argument("--model"); p.add_argument("--lane")
     p.add_argument("--state", choices=AGENT_STATES); p.add_argument("--pct", type=int)
     p.add_argument("--current", help="what the agent is doing right now"); p.add_argument("--pane")
+    p.add_argument("--items", help="JSON array: the agent's own work tree [{key,label,pct,status,note,subitems?}]")
     p.set_defaults(f=cmd_roster)
 
     p = sub.add_parser("swarm-scan", help="zero-token swarm observation: status drops + tmux panes → roster")

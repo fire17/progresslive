@@ -212,6 +212,25 @@ section.blk { margin-bottom: 40px; }
 .agent .acur { color: var(--muted); font-size: 11px; max-width: 24ch; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .agent .asince { color: var(--muted); font-size: 10px; }
+.agent.expandable { cursor: pointer; }
+.agent.expandable:hover { border-color: var(--muted); }
+.agent .alive { font: 700 9.5px ui-monospace, monospace; letter-spacing: 0.05em; color: var(--muted);
+  border: 1px solid var(--faint); border-radius: 999px; padding: 1px 7px; }
+.agent .alive.on { color: var(--green); border-color: var(--green-bar); }
+.agent .tw { margin-left: 2px; }
+.agent-detail { flex-basis: 100%; width: 100%; border: 1px solid var(--faint); border-top: none;
+  border-radius: 0 0 10px 10px; margin: -9px 0 2px; padding: 10px 14px; animation: arrive 0.25s cubic-bezier(0.22,1,0.36,1); }
+.agent-detail .ad-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.agent-detail .ad-meta b { color: var(--ink); }
+.agent-detail .ad-empty { font-size: 11.5px; color: var(--muted); }
+.aitems { list-style: none; padding: 0; }
+.aitem { display: grid; grid-template-columns: 10ch minmax(100px, 0.8fr) minmax(100px, 20ch) 4.5ch 7ch 1fr;
+  gap: 0 12px; align-items: center; min-height: 22px; padding: 2px 0; }
+.aitem .bar { height: 5px; }
+.aitem .lbl, .aitem .note { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aitem .key { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+.aitem .pct { font-size: 11px; text-align: right; color: var(--muted); }
+.aitem .st { font-size: 10px; }
 .phase.sub.d2 { min-height: 22px; } .phase.sub.d2 .lbl, .phase.sub.d3 .lbl { font-size: 11.5px; }
 .phase.sub.d2 .bar, .phase.sub.d3 .bar, .phase.sub.d4 .bar { height: 5px; opacity: 0.85; }
 .phase.sub.d3, .phase.sub.d4 { min-height: 20px; }
@@ -553,14 +572,36 @@ function renderProject(slug) {
 
   const GLYPH = { working: "●", building: "●", parked: "⏸", waiting: "◔", blocked: "✕", done: "✓", finished: "✓" };
   const active = b.roster.filter(r => ["working", "building", "waiting"].includes(r.state)).length;
-  const roster = b.roster.length ? `<section class="blk"><h2>agents · <b>${active} active</b> · ${b.roster.length} total</h2>
-    <ul class="roster">${b.roster.map(r => `<li class="agent ${esc(r.state)}" ${r.current ? `data-tip="${esc(r.current)}"` : ""}>
-      <span class="adot" data-g="${GLYPH[r.state] || "·"}"></span><span class="aname">${esc(r.name)}</span>
-      <span class="amodel mono">${esc(r.model)}</span><span class="alane">${esc(r.lane)}</span>
-      ${r.pct != null ? `<span class="abar"><b style="--p:${r.pct / 100}"></b></span><span class="apct mono">${r.pct}%</span>` : ""}
-      ${r.current ? `<span class="acur">${esc(r.current)}</span>` : ""}
-      ${r.since ? `<span class="asince mono" data-age-iso="${esc(r.since)}"></span>` : ""}
-    </li>`).join("")}
+  const agentItems = (list, depth) => list.map(it => `<li class="aitem d${Math.min(depth, 3)}">
+      <span class="key mono">${"·".repeat(depth * 2)}└ ${esc(it.key)}</span>
+      <span class="lbl" data-tip="${esc(it.label || it.key)}">${esc(it.label || it.key)}</span>
+      ${barHtml(it.pct || 0, it.status || "queued")}
+      <span class="pct mono">${it.pct || 0}%</span>
+      <span class="st s-${esc(it.status || "queued")}">${esc((it.status || "queued").toUpperCase())}</span>
+      <span class="note" data-tip="${esc(it.note || "")}">${linkify(it.note || "")}</span>
+    </li>${it.subitems ? agentItems(it.subitems, depth + 1) : ""}`).join("");
+  const roster = b.roster.length ? `<section class="blk"><h2>agents · <b>${active} active</b> · ${b.roster.length} total — click an agent to see inside</h2>
+    <ul class="roster">${b.roster.map(r => {
+      const aKey = slug + ":agent:" + r.name;
+      const aOpen = EXPANDED.set.has(aKey);
+      const seenAge = r.seen ? ageOf(r.seen) : null;
+      const liveNow = seenAge != null && seenAge < 300 && ["working", "building", "waiting"].includes(r.state);
+      return `<li class="agent ${esc(r.state)} expandable ${aOpen ? "open" : ""}"
+        onclick="toggleSubs('${esc(aKey)}')" role="button" aria-expanded="${aOpen}" tabindex="0"
+        onkeydown="if(event.key==='Enter')toggleSubs('${esc(aKey)}')">
+        <span class="adot"></span><span class="aname">${esc(r.name)}</span>
+        <span class="amodel mono">${esc(r.model)}</span><span class="alane">${esc(r.lane)}</span>
+        ${r.pct != null ? `<span class="abar"><b style="--p:${r.pct / 100}"></b></span><span class="apct mono">${r.pct}%</span>` : ""}
+        <span class="alive ${liveNow ? "on" : ""}" data-tip="${liveNow ? "drop/report within 5min" : r.seen ? "last signal " + fmtAge(seenAge) : "no signal recorded"}">${liveNow ? "ACTIVE" : ["done", "finished"].includes(r.state) ? "CLOSED" : "IDLE"}</span>
+        ${r.seen ? `<span class="asince mono" data-age-iso="${esc(r.seen)}"></span>` : ""}
+        <span class="tw ${aOpen ? "open" : ""}">▸</span>
+      </li>
+      ${aOpen ? `<li class="agent-detail">
+        <div class="ad-meta mono">state <b>${esc(r.state)}</b>${r.current ? ` · now: ${esc(r.current)}` : ""}${r.pane ? ` · pane ${esc(r.pane)}` : ""}${r.since ? ` · state-since ${esc(hms(r.since))}` : ""}${r.seen ? ` · last signal ${esc(hms(r.seen))}` : " · no drops yet"}</div>
+        ${(r.items || []).length ? `<ul class="aitems">${agentItems(r.items, 0)}</ul>`
+          : `<div class="ad-empty">no work tree reported yet — agent's items land here via <span class="mono">roster --agent ${esc(r.name)} --items '[…]'</span></div>`}
+      </li>` : ""}`;
+    }).join("")}
     </ul></section>` : "";
 
   const proof = b.proof.length ? `<section class="blk"><h2>proof — <b>what was actually run</b></h2>
