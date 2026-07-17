@@ -335,6 +335,8 @@ table.proof td.c-res { color: var(--green); }
 /* ProgressLive client — poll /api/state with ETag, render fleet + project views. */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const linkify = s => esc(s).replace(/(https?:\/\/[^\s<,)]+)/g,
+  '<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
 
 let STATE = null, ETAG = null, OFFLINE = false;
 const seenEv = new Set(); let firstRender = true;
@@ -415,7 +417,7 @@ function renderFleet() {
       <span><span class="pname">${esc(b.name)}</span><span class="ptag">${esc(b.tagline)}</span></span>
       <span class="fbar">${barHtml(ov, "now", "")}</span>
       <span class="pmeta mono"><b>${ov}%</b></span>
-      <span class="lastev" data-tip="${last ? esc(last.text) : ""}">${here ? `<b>▶ ${esc(here.label)}</b> · ` : ""}${last ? esc(last.text) : "no events"}${unreadCount(slug, events) ? `<span class="unread">+${unreadCount(slug, events)} new</span>` : ""}</span>
+      <span class="lastev" data-tip="${last ? esc(last.text) : ""}">${here ? `<b>▶ ${esc(here.label)}</b> · ` : ""}${last ? linkify(last.text) : "no events"}${unreadCount(slug, events) ? `<span class="unread">+${unreadCount(slug, events)} new</span>` : ""}</span>
       <span>${sparkHtml(events, 60, 14)}</span>
       <span class="ldot" data-age-iso="${esc(b.meta.updated)}" title="data age"></span>
     </a></li>`;
@@ -444,7 +446,7 @@ function renderProject(slug) {
       <span class="pct mono ${s.status === "now" ? "hot" : ""}">${s.pct}%</span>
       <span class="st s-${esc(s.status)}">${esc(s.status.toUpperCase())}</span>
       <span class="eta mono" data-tip="${esc(s.eta || "")}">${esc(s.eta || "")}</span>
-      <span class="note" data-tip="${esc(s.note || "")}">${esc(s.note || "")}</span>
+      <span class="note" data-tip="${esc(s.note || "")}">${linkify(s.note || "")}</span>
     </li>`).join("") : "";
     return `<li class="phase ${isHere ? "here" : ""} ${subs.length ? "has-subs" : ""}"
       ${subs.length ? `onclick="toggleSubs('${esc(xKey)}')" role="button" aria-expanded="${open}" tabindex="0"
@@ -456,7 +458,7 @@ function renderProject(slug) {
       <span class="st s-${esc(ph.status)}">${esc(ph.status.toUpperCase())}</span>
       <span class="eta mono" data-tip="${esc(ph.eta || "")}">${esc(ph.eta || "")}</span>
       <span class="note" style="display:flex;align-items:center;gap:10px">
-        <span class="note" style="flex:1" data-tip="${esc(ph.note || "")}">${esc(ph.note || "")}</span>
+        <span class="note" style="flex:1" data-tip="${esc(ph.note || "")}">${linkify(ph.note || "")}</span>
         ${isHere ? `<span class="youarehere mono">◀ YOU ARE HERE</span>` : ""}
         ${subs.length ? `<span class="subcount mono" data-tip="${subs.length} subitems — click to ${open ? "collapse" : "expand"}">${subs.filter(s => s.status === "done").length}/${subs.length}</span>` : ""}
       </span>
@@ -495,7 +497,7 @@ function renderProject(slug) {
     seenEv.add(id);
     return ndiv + sep + `<li class="k-${esc(ev.kind)} ${fresh ? "fresh" : ""}">
       <span class="ets mono" data-tip="${esc(new Date(ev.ts).toLocaleString())}">${hms(ev.ts)}</span><span class="edot"></span>
-      <span class="etext">${esc(ev.text)}${ev.delta ? `<span class="edelta mono">Δ ${esc(ev.delta)}</span>` : ""}</span>
+      <span class="etext">${linkify(ev.text)}${ev.delta ? `<span class="edelta mono">Δ ${linkify(ev.delta)}</span>` : ""}</span>
     </li>`;
   }).join("") || `<li class="k-note"><span class="ets mono"></span><span class="edot"></span><span class="etext" style="color:var(--muted)">no events match this filter</span></li>`;
   markSeenSoon(slug, p.events);
@@ -584,7 +586,7 @@ function stripHtml(slug, p, b, ov) {
     return `<span class="chan" data-chan='${esc(JSON.stringify([slug, l.label]))}'>
       <span class="cdot ${state[0]}"></span>
       <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>
-      <span class="curl mono">${esc(l.url.replace(/^https?:\/\//, ""))}</span>
+      <a class="curl mono" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.url.replace(/^https?:\/\//, ""))}</a>
       <span class="cstate ${state[0]}">${state[1]}</span>
       ${l.restart ? `<button class="rbtn" style="${up ? "display:none" : ""}" data-tip="run stored restart command: ${esc(l.restart)}"
         onclick="restartLink('${esc(slug)}','${esc(l.label)}',this)">⟳ restart</button>` : ""}
@@ -605,7 +607,7 @@ function stripHtml(slug, p, b, ov) {
     </div>
     <div class="strip-build mono">
       <span>local <span data-localver="${esc(slug)}">${lv ? `<b>${esc(lv)}</b>` : "—"}</span></span>
-      <span>published ${V.published ? `<b>${esc(V.published)}</b>` : `<span data-tip="${esc(V.published_note || "")}">${esc(V.published_note || "none")}</span>`}</span>
+      <span>published ${V.published ? `<b>${linkify(V.published)}</b>` : `<span data-tip="${esc(V.published_note || "")}">${linkify(V.published_note || "none")}</span>`}</span>
       <span style="margin-left:auto">manager: ${esc(b.meta.manager || "—")}</span>
     </div>
   </div>`;
