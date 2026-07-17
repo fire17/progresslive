@@ -280,6 +280,20 @@ table.proof td.c-res { color: var(--green); }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
 
+/* ================= sign-in (remote shell) ================= */
+#signin { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: grid; place-items: center; padding: 20px; }
+.si-card { max-width: 420px; width: 100%; border: 1px solid var(--faint); border-radius: 12px; padding: 28px; }
+.si-card h2 { margin-bottom: 8px; }
+.si-card p { color: var(--muted); font-size: 13.5px; margin-bottom: 18px; }
+.si-card .si-err { color: var(--clay); }
+.si-card label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+.si-card input { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--faint); background: var(--bg);
+  color: var(--ink); border-radius: 7px; font: 13px ui-monospace, monospace; padding: 8px 10px; }
+.si-card input:focus { outline: 2px solid var(--green); outline-offset: 1px; }
+.si-card button { border: none; background: var(--green-bar); color: var(--bg); font: 650 13px system-ui;
+  border-radius: 8px; padding: 9px 18px; cursor: pointer; }
+.si-card button:hover { filter: brightness(1.06); }
+
 /* ================= responsive ================= */
 @media (max-width: 780px) {
   .strip-main { grid-template-columns: 1fr; }
@@ -341,6 +355,32 @@ const linkify = s => esc(s).replace(/(https?:\/\/[^\s<,)]+)/g,
 let STATE = null, ETAG = null, OFFLINE = false;
 const seenEv = new Set(); let firstRender = true;
 
+/* ---------- remote backend (progress.akeyo.io shell → local machine via tunnel) ---------- */
+const REMOTE = !["localhost", "127.0.0.1", ""].includes(location.hostname);
+const API = REMOTE ? (localStorage.plApi || "").replace(/\/$/, "") : "";
+const TOKEN = REMOTE ? (localStorage.plTok || "") : "";
+const authHeaders = () => TOKEN ? { "Authorization": "Bearer " + TOKEN } : {};
+function showSignin(msg) {
+  document.getElementById("signin")?.remove();
+  const d = document.createElement("div");
+  d.id = "signin";
+  d.innerHTML = `<div class="si-card">
+    <h2>ProgressLive</h2>
+    <p>This page is a data-free shell. Boards stream live from fire17's machine — enter
+    your backend + access token to connect.${msg ? ` <b class="si-err">${msg}</b>` : ""}</p>
+    <label>backend url <input id="si-api" type="url" placeholder="https://…tunnel host…" value="${(localStorage.plApi || "")}"></label>
+    <label>access token <input id="si-tok" type="password" placeholder="paste token" value="${(localStorage.plTok || "")}"></label>
+    <button id="si-go">connect</button>
+  </div>`;
+  document.body.appendChild(d);
+  d.querySelector("#si-go").onclick = () => {
+    localStorage.plApi = d.querySelector("#si-api").value.trim();
+    localStorage.plTok = d.querySelector("#si-tok").value.trim();
+    location.reload();
+  };
+}
+if (REMOTE && (!API || !TOKEN)) addEventListener("DOMContentLoaded", () => showSignin());
+
 /* ---------- theme ---------- */
 const applyTheme = t => { t ? document.documentElement.dataset.theme = t : delete document.documentElement.dataset.theme; };
 applyTheme(localStorage.plTheme);
@@ -360,8 +400,10 @@ const day = iso => new Date(iso).toLocaleDateString([], {weekday:"short", year:"
 
 /* ---------- data ---------- */
 async function poll() {
+  if (REMOTE && (!API || !TOKEN)) return;
   try {
-    const r = await fetch("/api/state", {headers: ETAG ? {"If-None-Match": ETAG} : {}});
+    const r = await fetch(API + "/api/state", {headers: {...(ETAG ? {"If-None-Match": ETAG} : {}), ...authHeaders()}});
+    if (r.status === 401) { showSignin("unauthorized — check token"); return; }
     if (r.status === 200) {
       ETAG = r.headers.get("ETag");
       STATE = await r.json();
@@ -549,7 +591,8 @@ function toggleSubs(xKey) {
 /* ---------- control strip: KPIs · channels (probe + restart) · build ---------- */
 let LINKS = {};
 async function pollLinks() {
-  try { LINKS = await (await fetch("/api/links")).json(); } catch (e) {}
+  if (REMOTE && (!API || !TOKEN)) return;
+  try { LINKS = await (await fetch(API + "/api/links", {headers: authHeaders()})).json(); } catch (e) {}
   // patch strip in place (no full rerender — keeps scroll/filter)
   document.querySelectorAll("[data-chan]").forEach(el => {
     const [slug, label] = JSON.parse(el.dataset.chan);
@@ -616,8 +659,8 @@ function stripHtml(slug, p, b, ov) {
 async function restartLink(slug, label, btn) {
   btn.disabled = true; btn.textContent = "⟳ starting…";
   try {
-    const r = await (await fetch("/api/restart", { method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({slug, label}) })).json();
+    const r = await (await fetch(API + "/api/restart", { method: "POST",
+      headers: {"Content-Type": "application/json", ...authHeaders()}, body: JSON.stringify({slug, label}) })).json();
     toast(r.ok ? "restart command issued — probing…" : "restart failed: " + (r.err || "?"));
   } catch (e) { toast("restart failed: server unreachable"); }
   setTimeout(() => { pollLinks(); btn.disabled = false; btn.textContent = "⟳ restart"; }, 1800);
@@ -724,8 +767,19 @@ function drawFavicon(pct) {
   document.querySelector("link[rel=icon]").href = c.toDataURL();
 }
 
+/* SSE: server pushes on every board write → instant poll (ETag-cheap). Auto-reconnects. */
+function armStream() {
+  if (REMOTE && (!API || !TOKEN)) return;
+  try {
+    const es = new EventSource(API + "/api/stream" + (REMOTE ? "?t=" + encodeURIComponent(TOKEN) : ""));
+    es.onmessage = () => poll();
+    es.onerror = () => { es.close(); setTimeout(armStream, 5000); };
+  } catch (e) {}
+}
+armStream();
+
 addEventListener("hashchange", () => { FILTER.kind = "all"; FILTER.q = ""; render(); });
-poll(); setInterval(poll, 1500);
+poll(); setInterval(poll, REMOTE ? 2000 : 1500);   // SSE fast path where proxies allow; 2s ETag poll is the net (304 = 0 bytes)
 </script>
 </body>
 </html>

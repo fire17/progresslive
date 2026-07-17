@@ -39,10 +39,19 @@ from the computer".
 - Tunnel (not port-forward): TLS + no router config + revocable + hides home IP.
 - SSE (not WebSocket): stdlib-friendly, auto-reconnect, one-way push is all we need.
 
-## Order of work (next round)
+## Status (2026-07-17 — BUILT, live-verified)
 
-1. `--remote` flag: token auth + CORS + 401-zero-data (testable locally w/ curl).
-2. SSE endpoint + client wiring (local first).
-3. Pages shell build + sign-in screen (deploy WITHOUT tunnel = provably no data).
-4. Tunnel bring-up + end-to-end from a second device.
-5. Only then DNS on akeyo.io — each step gated on fire17's go.
+1. ✅ `--remote`: token auth (Bearer + `?t=` for SSE) + CORS (origin-locked) + 401-zero-data.
+   Verified: no-token 401 · bad-token 401 · good-token 200 · preflight 204.
+2. ✅ SSE `/api/stream` (chunked framing) — verified DIRECT (hello + changed within 1s).
+   ⚠ KNOWN LIMITATION: Cloudflare QUICK tunnels buffer streaming responses — SSE
+   delivers 0 bytes through them (3 framings tried: close-delimited, padded, chunked).
+   Remote realtime therefore rides the 2s ETag poll (304 = 0 bytes idle) — worst-case
+   ~2s to pixel. Fix path: named CF tunnel or `tailscale funnel` (both stream SSE).
+3. ✅ Pages shell live: https://progress.akeyo.io (gh-pages, data-free, sign-in gated).
+4. ✅ Tunnel e2e: quick tunnel → token → full board data over TLS. OPERATIONAL LAW:
+   start server BEFORE tunnel; any server restart requires a tunnel restart (quick
+   tunnels 530 on origin restart); quick-tunnel URL changes each run — paste into the
+   shell's sign-in. Tokens: `progress token add <name>` / `revoke` / `list`
+   (~/.progresslive/tokens.json, 0600).
+5. ⏳ Stable hostname (named tunnel on fire17's CF account or tailscale) — his go.

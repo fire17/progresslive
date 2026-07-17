@@ -278,28 +278,124 @@ def links_status():
     return out
 
 
+TOKENS_PATH = Path.home() / ".progresslive" / "tokens.json"
+
+def load_tokens():
+    try:
+        return json.loads(TOKENS_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def cmd_token(a):
+    import secrets, hmac as _
+    toks = load_tokens()
+    if a.action == "add":
+        if not a.name:
+            sys.exit("token add needs a name")
+        toks[a.name] = secrets.token_urlsafe(24)
+        atomic_write(TOKENS_PATH, json.dumps(toks, indent=1))
+        os.chmod(TOKENS_PATH, 0o600)
+        print(f"token for '{a.name}': {toks[a.name]}\n(hand this to them; revoke anytime: progress token revoke {a.name})")
+    elif a.action == "revoke":
+        if toks.pop(a.name, None) is None:
+            sys.exit(f"no token named '{a.name}'")
+        atomic_write(TOKENS_PATH, json.dumps(toks, indent=1))
+        print(f"revoked '{a.name}'")
+    else:  # list
+        print("\n".join(f"{n}  {t[:6]}…" for n, t in toks.items()) or "no tokens")
+
+
 def cmd_serve(a):
+    import hmac, threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    remote = getattr(a, "remote", False)
+    origin = getattr(a, "origin", "https://progress.akeyo.io")
+
+    def authed(tok):
+        return any(hmac.compare_digest(tok, t) for t in load_tokens().values())
 
     class H(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def log_message(self, *args):  # quiet
             pass
+
+        def _cors(self):
+            if remote:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Headers", "Authorization, If-None-Match, Content-Type")
+                self.send_header("Access-Control-Expose-Headers", "ETag")
 
         def _send(self, code, body, ctype, extra=None):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Content-Length", str(len(body)))
+            self._cors()
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
+        def _auth_ok(self):
+            """Remote mode: every /api/* needs a valid token. 401 carries ZERO data."""
+            if not remote:
+                return True
+            tok = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
+            if not tok:  # EventSource can't set headers — allow ?t= for /api/stream only
+                from urllib.parse import parse_qs, urlparse
+                if urlparse(self.path).path == "/api/stream":
+                    tok = parse_qs(urlparse(self.path).query).get("t", [""])[0]
+            return bool(tok) and authed(tok)
+
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self._cors()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def do_stream(self):
+            # Chunked transfer — proxies (Cloudflare tunnel) stream chunked bodies but
+            # buffer unknown-length ones. Manual framing; each SSE payload = one chunk.
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Transfer-Encoding", "chunked")
+            self._cors()
+            self.end_headers()
+            self.close_connection = True
+
+            def chunk(b):
+                self.wfile.write(f"{len(b):x}\r\n".encode() + b + b"\r\n")
+                self.wfile.flush()
+
+            chunk(b": " + b"p" * 2048 + b"\n\n: hello\n\n")
+            last = None
+            beat = 0
+            try:
+                while True:
+                    sig = max((f.stat().st_mtime_ns for f in PROJECTS.glob("*/*") if f.is_file()), default=0)
+                    if sig != last and last is not None:
+                        chunk(b"data: changed\n\n")
+                    last = sig
+                    beat += 1
+                    if beat % 30 == 0:  # heartbeat ~15s keeps proxies open
+                        chunk(b": beat\n\n")
+                    time.sleep(0.5)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         def do_GET(self):
             path = self.path.split("?")[0]
             try:
+                if path.startswith("/api/") and not self._auth_ok():
+                    self._send(401, b'{"error":"unauthorized"}', "application/json")
+                    return
                 if path in ("/", "/index.html") or path.startswith("/#"):
                     self._send(200, (SITE / "index.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/stream":
+                    self.do_stream()
                 elif path == "/api/state":
                     state, etag = assemble_state()
                     if self.headers.get("If-None-Match") == etag:
@@ -326,6 +422,9 @@ def cmd_serve(a):
             # /api/restart {slug,label}: run the restart command STORED IN board.json
             # (trusted, agent-written file) — request only selects which one. 127.0.0.1 only.
             try:
+                if not self._auth_ok():
+                    self._send(401, b'{"error":"unauthorized"}', "application/json")
+                    return
                 if self.path.split("?")[0] != "/api/restart":
                     self._send(404, b"not found", "text/plain")
                     return
@@ -390,8 +489,13 @@ def main():
     p = sub.add_parser("board", help="print the board (ANSI)")
     p.add_argument("slug"); p.set_defaults(f=cmd_board)
 
-    p = sub.add_parser("serve", help="serve site + JSON API")
-    p.add_argument("--port", type=int, default=8177); p.set_defaults(f=cmd_serve)
+    p = sub.add_parser("serve", help="serve site + JSON API (--remote adds token auth + CORS + SSE for tunnel exposure)")
+    p.add_argument("--port", type=int, default=8177); p.add_argument("--remote", action="store_true")
+    p.add_argument("--origin", default="https://progress.akeyo.io"); p.set_defaults(f=cmd_serve)
+
+    p = sub.add_parser("token", help="remote access tokens: add <name> | revoke <name> | list")
+    p.add_argument("action", choices=("add", "revoke", "list")); p.add_argument("name", nargs="?")
+    p.set_defaults(f=cmd_token)
 
     a = ap.parse_args()
     a.f(a)
