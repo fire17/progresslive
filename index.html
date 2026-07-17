@@ -300,6 +300,9 @@ table.proof td.c-res { color: var(--green); }
   border-radius: 6px; font: 650 10.5px system-ui; padding: 3px 9px; cursor: pointer; flex: none; }
 .chan .rbtn:hover { background: var(--clay-bar); color: var(--bg); }
 .chan .rbtn:disabled { opacity: 0.5; cursor: wait; }
+.sharebig { border: 1px solid var(--green-bar); background: var(--tint); color: var(--green);
+  border-radius: 8px; font: 650 12px system-ui; padding: 7px 14px; cursor: pointer; }
+.sharebig:hover { background: var(--green-bar); color: var(--bg); }
 .strip-build { border-top: 1px solid var(--faint); padding: 8px 18px; display: flex; gap: 22px;
   flex-wrap: wrap; font-size: 11.5px; color: var(--muted); background: var(--track); }
 .strip-build b { color: var(--ink); font-weight: 600; }
@@ -779,7 +782,7 @@ function stripHtml(slug, p, b, ov) {
   return `<div class="strip">
     <div class="strip-main">
       <div class="kpis">${kpis}</div>
-      <div class="channels">${locals}${pubs}${slug === "progresslive" && RINFO && !REMOTE ? remoteCard() : ""}
+      <div class="channels">${shareRow(slug)}${locals}${pubs}${slug === "progresslive" && RINFO && !REMOTE ? remoteCard() : ""}
         ${!locals && !pubs ? `<span class="chan" style="color:var(--muted)">no channels registered</span>` : ""}</div>
     </div>
     <div class="strip-build mono">
@@ -788,6 +791,18 @@ function stripHtml(slug, p, b, ov) {
       <span style="margin-left:auto">manager: ${esc(b.meta.manager || "—")}</span>
     </div>
   </div>`;
+}
+
+function shareRow(slug) {
+  // prominent, on EVERY project view (local only): one click = ready auto-login akeyo link
+  if (REMOTE || !RINFO?.tunnel_url) return "";
+  const tok = Object.values(RINFO.tokens || {})[0];
+  if (!tok) return "";
+  const link = `${RINFO.shell}?b=${encodeURIComponent(RINFO.tunnel_url)}&t=${encodeURIComponent(tok)}#/${encodeURIComponent(slug)}`;
+  return `<span class="chan">
+    <span class="cdot ${RINFO.tunnel_up ? "up" : "down"}"></span>
+    <button class="sharebig" data-tip="${esc(link)}" onclick="copyTxt('${esc(link)}','auto-login akeyo link')">⧉ copy akeyo link — auto-login, this board</button>
+  </span>`;
 }
 
 function remoteCard() {
