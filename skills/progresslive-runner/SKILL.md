@@ -80,10 +80,16 @@ python3 progress.py board  <slug>
 
 - Your parent tells you the tmux session/socket/team + subagent roster — DEMAND it if
   missing (ask-parent). Then: `python3 progress.py swarm-scan <slug> --session <s>
-  [--socket claude-swarm-<pid>]` on a 60–120s shell cron (Monitor tool or loop) —
+  [--socket claude-swarm-<pid>] --quiet` on a 60–120s shell cron (Monitor tool or loop) —
   zero-token machine observation: status-drop files (~/.progresslive/swarm/<slug>/*.jsonl)
   + tmux pane liveness → roster states (working|parked|waiting|blocked|done|finished),
   auto-evented on change.
+  🔴 CHANGE-GATED WAKE LAW (fire17, 2026-07-17): EVERY polling command you put inside a
+  Monitor MUST print ONLY when something actually changed — `--quiet` on swarm-scan;
+  git watchers emit only on new-commit/dirty-count-delta; NEVER `echo` a heartbeat/status
+  line on a no-change tick. Inside a Monitor, one printed line = one model wake = wasted
+  tokens; an idle swarm (main agent + all subagents quiet) must cost ZERO model turns.
+  If a loop of yours prints on every tick, fix the loop — do not filter mentally.
 - Per-agent display: `progress.py roster <slug> --agent NAME --state … --pct N
   --current "…" [--pane %N]` — glyph + mini-bar + current-task render automatically.
 - Deep work trees: dotted subitem paths nest arbitrarily (`--phase BUILD --sub

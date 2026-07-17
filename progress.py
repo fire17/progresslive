@@ -249,8 +249,11 @@ def cmd_swarm_scan(a):
     if changed:
         save_board(a.slug, b)
         append_event(a.slug, "update", "swarm scan: " + "; ".join(changed)[:300], delta="machine-derived")
-    print(f"swarm-scan {a.slug}: {len(seen)} observed, {len(changed)} changed"
-          + (f" ({'; '.join(changed)[:200]})" if changed else ""))
+    if changed or not a.quiet:
+        # --quiet: total silence when nothing changed — inside a Monitor, a printed line
+        # wakes the supervising agent (a model turn); idle swarms must cost ZERO tokens.
+        print(f"swarm-scan {a.slug}: {len(seen)} observed, {len(changed)} changed"
+              + (f" ({'; '.join(changed)[:200]})" if changed else ""))
 
 
 def cmd_proof(a):
@@ -599,6 +602,7 @@ def main():
     p = sub.add_parser("swarm-scan", help="zero-token swarm observation: status drops + tmux panes → roster")
     p.add_argument("slug"); p.add_argument("--session", help="tmux session name")
     p.add_argument("--socket", help="tmux -L socket (e.g. claude-swarm-<pid>)")
+    p.add_argument("--quiet", action="store_true", help="print NOTHING when 0 changed (Monitor-safe: no output = no agent wake)")
     p.set_defaults(f=cmd_swarm_scan)
 
     p = sub.add_parser("proof", help="record a verified claim")
