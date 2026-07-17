@@ -189,8 +189,10 @@ def call(name, a):
                   f'SendMessage it your MODEL line, ask-parent queries, and escalations. Serve/reuse '
                   f'localhost:{cfg.get("port", 8177)}, seed from verified state only, open the board, then reside. '
                   f'Swarm visibility: ask the parent for the tmux session/socket/team + subagent roster, then cron '
-                  f'`python3 progress.py swarm-scan {a["slug"]} --session <s>` (60-120s, zero-token); subagents '
-                  f'report via status-drop files per the runner skill. '
+                  f'`python3 progress.py swarm-scan {a["slug"]} --session <s> --quiet` (60-120s, zero-token; --quiet '
+                  f'= no output on no-change ticks, so idle swarms never wake you); subagents report via status-drop '
+                  f'files; SELF-REPORT META LAW: register your own roster row w/ --items duty tree + drop on every '
+                  f'transition (the ACTIVE/IDLE chip derives from drop recency machine-side). '
                   f'First line of every report: MODEL: <your model id>.')
         return json.dumps({"spawn": {"tool": "Agent", "name": f"progresslive-{a['slug']}",
                                      "model": cfg.get("model", "sonnet"), "never": "fable",

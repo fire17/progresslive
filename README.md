@@ -1,101 +1,61 @@
-# ProgressLive 🟩
+# ProgressLive
 
-**Realtime dev-progress mission control.** Your agents write truth into file-backed
-boards; you open one tab and see exactly where every project is — current state AND
-full history — with a liveness badge that cannot lie.
+Realtime dev-progress mission control. An agent writes truth into files; you open a tab
+and see exactly where every project is — current board AND full append-only history —
+with a liveness badge that cannot lie (derived from data age, not claims).
 
-![demo board](docs/img/demo-board-light.png)
+Born 2026-07-17 tracking **AgentWorkAtlas**; generic from day one. Founding words:
+`VISION.md` (verbatim, sha256 `.deify/vision.sha256`).
 
-Built 2026-07-17 by a resident tracker agent, live-tracking the build that created it
-(and itself — the platform tracks its own board). Founding vision preserved verbatim
-in [VISION.md](VISION.md).
-
-## Why
-
-- **Honest by construction** — the LIVE/IDLE/STALE badge derives from data age
-  client-side; stale data can never look fresh. Proof tables record what was *actually
-  run*, with refs. Agents are instructed: never invent progress.
-- **Current + historical, always both** — `board.json` (atomic rewrite) is now;
-  `events.jsonl` (append-only) is how you got here.
-- **Zero everything** — no build step, no framework, no external requests, no deps
-  beyond Python stdlib. One file serves, one file renders.
-
-## Quickstart
+## Run
 
 ```bash
-git clone https://github.com/fire17/progresslive && cd progresslive
-python3 progress.py serve --port 8177
-open http://localhost:8177/#/demo        # bundled demo board
+python3 progress.py serve --port 8177   # site + JSON API
+open http://localhost:8177/             # fleet view; #/<slug> per project
 ```
 
-Register your project + drive it:
+## Inside the swarm (v1.3.0)
 
-```bash
-python3 progress.py init myapp --name "My App" --repo ~/src/myapp
-python3 progress.py update myapp --phase BUILD --pct 40 --status now --eta "~2h" --here
-python3 progress.py update myapp --phase BUILD --sub API --pct 100 --status done   # nested; phase % rolls up
-python3 progress.py event  myapp "perf gate PASS — p95 8.2ms" --kind milestone --delta "commit abc123"
-python3 progress.py roster myapp --set backend:opus:"API + worker":building
-python3 progress.py proof  myapp --claim "tests green" --cmd "pytest" --result "34 passed" --ref abc123
-python3 progress.py setjson myapp kpis '[{"label":"tests green","value":"34"}]'
-python3 progress.py board  myapp        # ANSI board in your terminal
-```
+Subitems nest to any depth (`--sub A.B.C`, recursive rollup). Agent rows expand —
+state, current task, pane, last signal, the agent's own work tree. ACTIVE/IDLE/CLOSED
+derives machine-side from status-drop recency; `swarm-scan --quiet` observes drops +
+tmux panes silently on no-change ticks (change-gated wake law: idle swarms cost zero
+model tokens). Runners self-report as subagents — the watcher is watched.
 
-## What you get
+## Three writer surfaces, one file contract
 
-| Surface | |
+| Surface | Use |
 |---|---|
-| **Fleet view** `#/` | every project: live bar, current phase, unread chips, activity sparkline, liveness dot |
-| **Project board** `#/<slug>` | phases w/ bars + one ◀ YOU ARE HERE + expand/collapse subitems, agent roster, proof table, filterable event feed |
-| **Control strip** | KPIs (generic + per-project), local ports w/ live TCP probes + restart buttons, published links, live `git describe` version |
-| **Instant everything** | rich tooltips, copy-board-as-ASCII-report, new-since-last-visit markers, keyboard nav (`g` `1-9` `t` `/`), dynamic favicon, dual OKLCH themes |
+| CLI `progress.py` | agents + humans: `init · update · event · roster · proof · board · serve` |
+| MCP `mcp_server.py` | any harness: `claude mcp add progresslive -- python3 ~/Creations/ProgressLive/mcp_server.py` |
+| files | anything else may write `projects/<slug>/board.json` + `events.jsonl` (schema 1, atomic temp+rename) |
 
-Realtime: clients poll `/api/state` every 1.5s with ETags (idle = 304, 0 bytes); a board
-write reaches open tabs in ~0.5–1s with no reload — even layout changes self-deploy
-(`site_v` reload). Measured, not claimed: see [BUDGETS.md](BUDGETS.md).
+Contract details: `IA.md` + docstring in `progress.py`. Update = rewrite board.json;
+append = event line — current + historical both always visible (the founding demand).
 
-![dark theme](docs/img/demo-board-dark.png)
+## Reproduce the tracker in any session
 
-## Agents: skills + MCP
-
-```bash
-./install.sh    # installs /progresslive (/plv), /progresslive-runner (/plr), /dev-progress (/dvp)
-```
-
-- **`/progresslive`** in any Claude Code session spawns a resident tracker subagent
-  (model from `runner.config.json` — default sonnet, never the orchestrator model) that
-  registers the project, seeds the board from real git history, serves, opens, and keeps
-  it truthful: polls git + tasks, mirrors parent deltas within seconds, asks the parent
-  for phase sub-structure (never invents), and boards every scope-add immediately.
-- **MCP** — any harness writes boards through 6 tools; 3 more (`pl_detect`/`pl_ensure`/
-  `pl_runner_brief`) + server instructions make tracking automatic for every project:
-  ```bash
-  claude mcp add --scope user progresslive -- python3 $(pwd)/mcp_server.py
-  ```
-
-## Data contract (schema 1 — the interface is files, not this code)
-
-```
-projects/<slug>/board.json     current state (atomic temp+rename)
-projects/<slug>/events.jsonl   history (append-only, never rewritten)
-```
-
-`phases[{key,label,pct,status,eta,note,subitems[]?}]` · `status ∈ done|now|queued|blocked|gated`
-· one `here` · `roster[]` · `proof[]` · `kpis[]` · `links{local[],published[]}` · `version{}`.
-Anything that writes these shapes is a first-class citizen — CLI, MCP, cron, another
-harness. New project = new directory; the fleet view picks it up with zero code changes.
-
-## Roadmap
-
-[REMOTE.md](REMOTE.md) — view boards from any computer via a static Pages shell, with
-your local machine as the only backend: tunnel + revocable token auth + SSE push. No
-project data leaves the machine unauthorized, by design.
+`/dev-progress` (alias `/dvp`) — spawns a resident subagent (explicit model, never Fable)
+that registers the current project, seeds from verified state (git log timestamps become
+real history), serves, opens, and keeps the board truthful. Skill: `~/.claude/skills/dev-progress/`.
 
 ## Design
 
-A mastering suite's meter bridge, not a SaaS dashboard: white bench + plotter-green ink,
-real dark theme, OKLCH tokens, system fonts, rows not cards. Rationale: [PRODUCT.md](PRODUCT.md).
+Meter-bridge instrument, not SaaS dashboard: white bench + plotter-green ink (dark theme
+real, OKLCH, system fonts, zero external requests, no build step). Full rationale:
+`PRODUCT.md`; budgets + tests: `BUDGETS.md`; verified screenshots: `.deify/shots/`.
 
-## License
+## The future arc (fire17's vision — designed-for, deliberately not built)
 
-MIT © [fire17](https://github.com/fire17)
+- **Fleet platform**: many projects, many harnesses — the fleet view already iterates
+  `projects/*`; new project = new directory, zero code edits.
+- **MCP-first**: v1 ships a working stdio MCP server; a hosted/multi-machine variant is
+  additive (same tools, same file contract).
+- **Any-harness push**: Codex/Zenith/nexus lanes write the same two files — schema 1 is
+  the interface, not this repo's code.
+- **Views**: per-project deep boards (done) → cross-project rollups, time-scrubbed
+  history replay, per-agent lanes — all derivable from events.jsonl without migration.
+
+Honest status: v1 live-verified locally (realtime 1043ms append→pixel, no reload;
+304-poll 0 bytes; cold load <1ms served). Not published anywhere — leaves this machine
+only on explicit go.
