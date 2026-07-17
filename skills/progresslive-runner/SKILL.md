@@ -112,3 +112,9 @@ python3 progress.py board  <slug>
   The board's ACTIVE/IDLE chip derives from drop recency (5min window, machine-side) —
   you never spend a token announcing idleness; going quiet IS the signal. Keep your
   items tree honest as duties progress; the user expands your row to see inside you.
+  CLOSED-AGENT ARCHIVE (precedent 2026-07-17): when an agent is closed/replaced, set its
+  roster state (done/finished/gone) AND move its drop file to
+  `~/.progresslive/swarm/<slug>/closed/` — a live drop file resurrects closed agents on
+  every scan (observed bug: predecessor kept reappearing as "working"). If a scan shows
+  an agent you know is closed → its drop file wasn't archived; archive it, don't fight
+  the roster.
