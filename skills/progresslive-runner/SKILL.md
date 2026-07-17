@@ -35,11 +35,16 @@ write truth, staleness shows itself.
 ```bash
 cd ~/Creations/ProgressLive
 python3 progress.py init <slug> --name … --tagline … --repo … --manager …
-python3 progress.py update <slug> --phase KEY [--sub SUBKEY] --pct N --status now --eta "…" [--here] [--note "…"]
+python3 progress.py update <slug> --phase KEY [--sub A.B.C] --pct N --status now --eta "…" [--here] [--note "…"]
+                                  # --sub takes DOTTED PATHS — any nesting depth, recursive rollup
 python3 progress.py event  <slug> "text" --kind milestone|update|note|report [--delta "commit abc"]
-python3 progress.py roster <slug> --set name:model:lane:state     # 'gone' removes
+python3 progress.py roster <slug> --set name:model:lane:state     # bulk; 'gone' removes
+python3 progress.py roster <slug> --agent NAME --state working --pct N --current "…" [--pane %N] \
+                                  --items '[{"key":"…","label":"…","pct":0,"status":"now","subitems":[…]}]'
+python3 progress.py swarm-scan <slug> [--session <tmux>] [--socket <sock>] --quiet   # zero-token observation
 python3 progress.py proof  <slug> --claim "…" --cmd "…" --result "…" --ref "…"
 python3 progress.py setjson <slug> kpis|links|version '<json>'
+python3 progress.py token  add|revoke|list [name]                 # remote access tokens
 python3 progress.py board  <slug>
 ```
 
