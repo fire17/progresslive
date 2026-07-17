@@ -72,7 +72,11 @@ continues the Procedure + scope-add law above):
    Push the same format proactively at every milestone/phase transition/scope-add so
    asks stay rare. Prose answers force the runner to interpret = the guessing fire17
    banned.
-10. Runner observes the rest machine-side at ZERO model tokens (`progress.py swarm-scan`:
+10. **If you register YOURSELF on the roster, the drop duty binds you too** (lesson
+    2026-07-17: parent showed IDLE while actively working — its own drops were stale).
+    Append a drop line on your own transitions or accept an honest IDLE chip; never
+    let the board claim ACTIVE it can't derive.
+11. Runner observes the rest machine-side at ZERO model tokens (`progress.py swarm-scan`:
    drops + tmux list-panes + pane liveness) and renders per-agent status glyphs +
    progress bars + arbitrarily-nested subitems (`--sub A.B.C…`). Token economics: you
    push milestones; drops carry state; the model only writes when something CHANGED.

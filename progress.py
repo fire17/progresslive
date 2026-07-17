@@ -118,7 +118,7 @@ def cmd_update(a):
     b = load_board(a.slug)
     ph = next((p for p in b["phases"] if p["key"] == a.phase), None)
     if ph is None:
-        ph = {"key": a.phase, "label": a.label or a.phase, "pct": 0, "status": "queued", "eta": None, "note": ""}
+        ph = {"key": a.phase, "label": a.label or a.phase, "pct": 0, "status": "queued", "eta": None, "note": "", "born": now_iso()}
         b["phases"].append(ph)
     if getattr(a, "sub", None):
         # dotted path = arbitrary nesting: --sub UXE.E2E.SMOKE creates/updates down the tree
@@ -128,7 +128,7 @@ def cmd_update(a):
             nxt = next((s for s in subs if s["key"] == part), None)
             if nxt is None:
                 nxt = {"key": part, "label": (a.label or part) if part == a.sub.split(".")[-1] else part,
-                       "pct": 0, "status": "queued", "eta": None, "note": ""}
+                       "pct": 0, "status": "queued", "eta": None, "note": "", "born": now_iso()}
                 subs.append(nxt)
             node, _ = nxt, path.append(part)
         t = node
@@ -219,7 +219,7 @@ def cmd_ingest(a):
         node = next((s for s in parent_list if s["key"] == spec["key"]), None)
         if node is None:
             node = {"key": spec["key"], "label": spec.get("label", spec["key"]),
-                    "pct": 0, "status": "queued", "eta": None, "note": ""}
+                    "pct": 0, "status": "queued", "eta": None, "note": "", "born": now_iso()}
             parent_list.append(node)
         for k in ("label", "pct", "status", "eta", "note"):
             if k in spec:
