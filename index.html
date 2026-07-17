@@ -184,7 +184,8 @@ section.blk { margin-bottom: 40px; }
 .phase .tw { display: inline-block; color: var(--muted); margin-right: 4px;
   transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
 .phase .tw.open { transform: rotate(90deg); color: var(--green); }
-.phase.sub { min-height: 24px; padding-block: 3px; animation: arrive 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+.phase.sub { min-height: 24px; padding-block: 3px; }
+.phase.sub.anim { animation: arrive 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
 .phase.sub .key { font-weight: 500; color: var(--muted); font-size: 11.5px; padding-left: 1.5ch; }
 .phase.sub .lbl { font-size: 12px; }
 .phase.sub .bar { height: 6px; opacity: 0.9; }
@@ -211,7 +212,8 @@ table.proof td.c-res { color: var(--green); }
 .proof-wrap { overflow-x: auto; }
 
 .feed { list-style: none; padding: 0; }
-.feed li { display: grid; grid-template-columns: 8.5ch 14px 1fr; gap: 12px; padding: 7px 0; align-items: baseline; }
+.feed li { display: grid; grid-template-columns: 8.5ch 14px 1fr; gap: 12px; padding: 7px 0; align-items: baseline;
+  content-visibility: auto; contain-intrinsic-size: auto 36px; }
 .feed .ets { font-size: 11.5px; color: var(--muted); }
 .feed .edot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted);
   align-self: center; justify-self: center; }
@@ -494,7 +496,7 @@ function renderProject(slug) {
     const xKey = slug + ":" + ph.key;
     if (isHere && !EXPANDED.touched.has(xKey)) EXPANDED.set.add(xKey);   // here-phase opens by default
     const open = EXPANDED.set.has(xKey);
-    const subRows = open ? subs.map(s => `<li class="phase sub">
+    const subRows = open ? subs.map(s => `<li class="phase sub ${SUBS_ANIM ? "anim" : ""}">
       <span class="key mono">└ ${esc(s.key)}</span>
       <span class="lbl" data-tip="${esc(s.label)}">${esc(s.label)}</span>
       ${barHtml(s.pct, s.status)}
@@ -577,10 +579,14 @@ function renderProject(slug) {
       <ul class="feed">${feed}</ul></section>`;
 }
 
+let LAST_HTML = "";
 function render() {
   if (!STATE) return;
   const slug = route();
-  $("#view").innerHTML = slug ? renderProject(slug) : renderFleet();
+  const html = slug ? renderProject(slug) : renderFleet();
+  if (html === LAST_HTML && !SUBS_ANIM) { tickConn(); return; }   // nothing visible changed — zero DOM work
+  LAST_HTML = html;
+  $("#view").innerHTML = html;
   const boards = Object.values(STATE.projects).map(x => x.board);
   const b = slug ? STATE.projects[slug]?.board : null;
   const ov = b ? overall(b)
@@ -593,12 +599,16 @@ function render() {
 
 /* ---------- subitems expand/collapse ---------- */
 const EXPANDED = { set: new Set(JSON.parse(localStorage.plOpen || "[]")), touched: new Set(JSON.parse(localStorage.plOpenTouched || "[]")) };
+let SUBS_ANIM = false;   // arrive-animation ONLY on user toggle, never on poll rebuilds
 function toggleSubs(xKey) {
+  if (event?.target?.closest("a, button")) return;   // links/buttons inside rows don't toggle
   EXPANDED.touched.add(xKey);
   EXPANDED.set.has(xKey) ? EXPANDED.set.delete(xKey) : EXPANDED.set.add(xKey);
   localStorage.plOpen = JSON.stringify([...EXPANDED.set]);
   localStorage.plOpenTouched = JSON.stringify([...EXPANDED.touched]);
+  SUBS_ANIM = true;
   render();
+  SUBS_ANIM = false;
 }
 
 /* ---------- control strip: KPIs · channels (probe + restart) · build ---------- */
@@ -792,7 +802,7 @@ function armStream() {
 armStream();
 
 addEventListener("hashchange", () => { FILTER.kind = "all"; FILTER.q = ""; render(); });
-poll(); setInterval(poll, REMOTE ? 2000 : 1500);   // SSE fast path where proxies allow; 2s ETag poll is the net (304 = 0 bytes)
+poll(); setInterval(poll, REMOTE ? 2000 : 4000);   // SSE pushes instantly (<1s); poll is only the safety net (304 = 0 bytes)
 </script>
 </body>
 </html>
