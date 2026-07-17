@@ -1,0 +1,7 @@
+{"ts": "2026-07-17T12:00:00+03:00", "kind": "milestone", "text": "project 'demo' registered in ProgressLive"}
+{"ts": "2026-07-17T12:10:00+03:00", "kind": "milestone", "text": "spec frozen after design review", "delta": "commit aaa1111"}
+{"ts": "2026-07-17T13:00:00+03:00", "kind": "update", "text": "BUILD \u25b8 API \u00b7 REST API: 100% done", "delta": "pct 70\u2192100, status now\u2192done"}
+{"ts": "2026-07-17T13:35:00+03:00", "kind": "note", "text": "worker queue edge case found \u2014 drain order matters under load"}
+{"ts": "2026-07-17T14:00:00+03:00", "kind": "report", "text": "midday report: BUILD 62%, API leg complete, worker + UI in flight", "delta": "phases 1/5 done"}
+{"ts": "2026-07-17T14:30:00+03:00", "kind": "milestone", "text": "perf gate PASS \u2014 p95 8.2ms against 25ms budget", "delta": "perf run"}
+{"ts": "2026-07-17T15:00:00+03:00", "kind": "update", "text": "BUILD \u25b8 WORK \u00b7 Background worker: 55% now \u00b7 eta ~1h", "delta": "pct 40\u219255"}

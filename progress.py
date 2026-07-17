@@ -1,0 +1,401 @@
+#!/usr/bin/env python3
+"""progress — file-based realtime dev-progress store + CLI + server.
+
+Data contract (schema 1, additive-by-design):
+  projects/<slug>/board.json    current state  (atomic rewrite)
+  projects/<slug>/events.jsonl  history        (append-only, never rewritten)
+
+board.json:
+  { schema, slug, name, tagline,
+    meta:   { updated, started, repo, manager },
+    here:   "<phase key>"            # exactly one YOU ARE HERE
+    phases: [ {key,label,pct,status,eta,note} ],   # status: done|now|queued|blocked|gated
+    roster: [ {name,model,lane,state} ],
+    proof:  [ {claim,cmd,result,ref,ts} ] }
+
+events.jsonl line: { ts, kind, text, delta? }     # kind: update|milestone|note|report
+
+Any harness (CLI, MCP, future push API) writing these shapes is a first-class
+citizen — that is the whole expansion contract. stdlib only, no deps.
+"""
+import argparse, hashlib, json, os, sys, tempfile, time
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PROJECTS = ROOT / "projects"
+SITE = ROOT / "site"
+STATUSES = ("done", "now", "queued", "blocked", "gated")
+KINDS = ("update", "milestone", "note", "report")
+
+
+def now_iso():
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def atomic_write(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def board_path(slug):
+    return PROJECTS / slug / "board.json"
+
+
+def events_path(slug):
+    return PROJECTS / slug / "events.jsonl"
+
+
+def load_board(slug):
+    p = board_path(slug)
+    if not p.exists():
+        sys.exit(f"no project '{slug}' — run: progress init {slug} --name ...")
+    return json.loads(p.read_text())
+
+
+def save_board(slug, board):
+    board["meta"]["updated"] = now_iso()
+    atomic_write(board_path(slug), json.dumps(board, indent=1, ensure_ascii=False) + "\n")
+
+
+def append_event(slug, kind, text, delta=None, ts=None):
+    if kind not in KINDS:
+        sys.exit(f"kind must be one of {KINDS}")
+    ev = {"ts": ts or now_iso(), "kind": kind, "text": text}
+    if delta:
+        ev["delta"] = delta
+    line = json.dumps(ev, ensure_ascii=False) + "\n"
+    with open(events_path(slug), "a") as f:  # append-only; O_APPEND is atomic per line
+        f.write(line)
+    return ev
+
+
+# ---------------- commands ----------------
+
+def cmd_init(a):
+    p = board_path(a.slug)
+    if p.exists():
+        sys.exit(f"'{a.slug}' already exists")
+    board = {
+        "schema": 1, "slug": a.slug, "name": a.name or a.slug, "tagline": a.tagline or "",
+        "meta": {"updated": now_iso(), "started": now_iso(), "repo": a.repo or "", "manager": a.manager or ""},
+        "here": None, "phases": [], "roster": [], "proof": [],
+    }
+    atomic_write(p, json.dumps(board, indent=1, ensure_ascii=False) + "\n")
+    events_path(a.slug).touch()
+    append_event(a.slug, "milestone", f"project '{a.slug}' registered in ProgressLive")
+    print(f"registered {a.slug}")
+
+
+def _apply_fields(t, a):
+    """Apply update-args onto a phase or subitem dict; returns (old, changed-name)."""
+    old = dict(t)
+    if a.label is not None:
+        t["label"] = a.label
+    if a.pct is not None:
+        t["pct"] = max(0, min(100, a.pct))
+    if a.status is not None:
+        if a.status not in STATUSES:
+            sys.exit(f"status must be one of {STATUSES}")
+        t["status"] = a.status
+        if a.status == "done" and a.pct is None:
+            t["pct"] = 100
+    if a.eta is not None:
+        t["eta"] = a.eta or None
+    if a.note is not None:
+        t["note"] = a.note
+    return old
+
+
+def cmd_update(a):
+    b = load_board(a.slug)
+    ph = next((p for p in b["phases"] if p["key"] == a.phase), None)
+    if ph is None:
+        ph = {"key": a.phase, "label": a.label or a.phase, "pct": 0, "status": "queued", "eta": None, "note": ""}
+        b["phases"].append(ph)
+    if getattr(a, "sub", None):
+        subs = ph.setdefault("subitems", [])
+        t = next((s for s in subs if s["key"] == a.sub), None)
+        if t is None:
+            t = {"key": a.sub, "label": a.label or a.sub, "pct": 0, "status": "queued", "eta": None, "note": ""}
+            subs.append(t)
+        old = _apply_fields(t, a)
+        # honest rollup: phase pct = mean of subitem pcts (explicit --pct on the phase later overrides)
+        ph["pct"] = round(sum(s["pct"] for s in subs) / len(subs))
+        name = f"{ph['key']} ▸ {t['key']}"
+    else:
+        t = ph
+        old = _apply_fields(t, a)
+        name = ph["key"]
+    if a.here:
+        b["here"] = a.phase
+    save_board(a.slug, b)
+    bits = [f"{k} {old[k]}→{t[k]}" for k in ("pct", "status", "eta") if old.get(k) != t.get(k)]
+    delta = ", ".join(bits) or None
+    append_event(a.slug, "update", a.event or f"{name} · {t['label']}: {t['pct']}% {t['status']}"
+                 + (f" · eta {t['eta']}" if t.get("eta") else ""), delta=delta)
+    print(f"{a.slug}/{name}: pct={t['pct']} status={t['status']} eta={t['eta']}"
+          + (f" | phase rollup {ph['pct']}%" if getattr(a, "sub", None) else ""))
+
+
+def cmd_here(a):
+    b = load_board(a.slug)
+    if not any(p["key"] == a.phase for p in b["phases"]):
+        sys.exit(f"no phase '{a.phase}' in {a.slug}")
+    b["here"] = a.phase
+    save_board(a.slug, b)
+    print(f"{a.slug}: YOU ARE HERE → {a.phase}")
+
+
+def cmd_event(a):
+    ev = append_event(a.slug, a.kind, a.text, delta=a.delta)
+    # bump meta.updated so liveness reflects the append too
+    save_board(a.slug, load_board(a.slug))
+    print(f"appended {ev['kind']} @ {ev['ts']}")
+
+
+def cmd_roster(a):
+    b = load_board(a.slug)
+    if a.clear:
+        b["roster"] = []
+    for spec in a.set or []:
+        parts = (spec.split(":") + ["", "", ""])[:4]
+        name, model, lane, state = parts
+        b["roster"] = [r for r in b["roster"] if r["name"] != name]
+        if state != "gone":
+            b["roster"].append({"name": name, "model": model, "lane": lane, "state": state or "building"})
+    save_board(a.slug, b)
+    print(f"{a.slug} roster: " + ", ".join(f"{r['name']}({r['state']})" for r in b["roster"]))
+
+
+def cmd_proof(a):
+    b = load_board(a.slug)
+    b["proof"].append({"claim": a.claim, "cmd": a.cmd or "", "result": a.result or "",
+                       "ref": a.ref or "", "ts": now_iso()})
+    save_board(a.slug, b)
+    print(f"proof recorded: {a.claim}")
+
+
+def cmd_board(a):
+    b = load_board(a.slug)
+    G, C, Y, D, R = "\033[32m", "\033[36m", "\033[33m", "\033[2m", "\033[0m"
+    print(f"\n {b['name']}  {D}{b['tagline']}{R}\n {D}updated {b['meta']['updated']}{R}\n")
+    for p in b["phases"]:
+        full = round(p["pct"] / 5)
+        bar = "█" * full + "░" * (20 - full)
+        col = {"done": G, "now": C, "blocked": R + "\033[31m", "gated": Y}.get(p["status"], D)
+        mark = f"  {G}◀ YOU ARE HERE{R}" if b.get("here") == p["key"] else ""
+        eta = f" eta {p['eta']}" if p.get("eta") else ""
+        print(f" {p['key']:>7} {col}{bar}{R} {p['pct']:>3}% {col}{p['status']:<7}{R}{eta}{mark}")
+    if b["roster"]:
+        print("\n agents: " + ", ".join(f"{r['name']}[{r['model']}:{r['state']}]" for r in b["roster"]))
+    print()
+
+
+# ---------------- state assembly + server ----------------
+
+def assemble_state(tail=200):
+    projects, sig = {}, []
+    if PROJECTS.exists():
+        for d in sorted(PROJECTS.iterdir()):
+            bp, ep = d / "board.json", d / "events.jsonl"
+            if not bp.exists():
+                continue
+            try:
+                board = json.loads(bp.read_text())
+            except json.JSONDecodeError:
+                continue  # mid-write race; next poll gets it (writes are atomic)
+            events = []
+            if ep.exists():
+                for line in ep.read_text().splitlines()[-tail:]:
+                    try:
+                        events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+                sig.append(f"{ep.stat().st_mtime_ns}:{ep.stat().st_size}")
+            sig.append(f"{bp.stat().st_mtime_ns}")
+            projects[d.name] = {"board": board, "events": events}
+    etag = hashlib.sha1("|".join(sig).encode()).hexdigest()[:16]
+    site_v = str((SITE / "index.html").stat().st_mtime_ns)
+    return {"projects": projects, "server_ts": now_iso(), "site_v": site_v}, etag + "-" + site_v[-6:]
+
+
+def cmd_setjson(a):
+    if a.field not in ("kpis", "links", "version"):
+        sys.exit("field must be kpis|links|version")
+    b = load_board(a.slug)
+    b[a.field] = json.loads(a.json)
+    save_board(a.slug, b)
+    print(f"{a.slug}.{a.field} set")
+
+
+_links_cache = {"t": 0.0, "data": None}
+
+def links_status():
+    """Probe every local link port + live git version per project. 5s cache."""
+    import socket, subprocess
+    now = time.time()
+    if _links_cache["data"] is not None and now - _links_cache["t"] < 5:
+        return _links_cache["data"]
+    out = {}
+    if PROJECTS.exists():
+        for d in sorted(PROJECTS.iterdir()):
+            bp = d / "board.json"
+            if not bp.exists():
+                continue
+            try:
+                b = json.loads(bp.read_text())
+            except json.JSONDecodeError:
+                continue
+            links = b.get("links", {})
+            st = {}
+            for l in links.get("local", []):
+                port = l.get("port")
+                ok = False
+                if port:
+                    try:
+                        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.25):
+                            ok = True
+                    except OSError:
+                        ok = False
+                st[l["label"]] = ok
+            ver = None
+            repo = Path(b.get("meta", {}).get("repo", "")).expanduser()
+            if repo.is_dir():
+                r = subprocess.run(["git", "-C", str(repo), "describe", "--tags", "--always", "--dirty"],
+                                   capture_output=True, text=True)
+                if r.returncode == 0:
+                    ver = r.stdout.strip()
+            out[d.name] = {"status": st, "local_version": ver}
+    _links_cache.update(t=now, data=out)
+    return out
+
+
+def cmd_serve(a):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *args):  # quiet
+            pass
+
+        def _send(self, code, body, ctype, extra=None):
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(body)))
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            try:
+                if path in ("/", "/index.html") or path.startswith("/#"):
+                    self._send(200, (SITE / "index.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/state":
+                    state, etag = assemble_state()
+                    if self.headers.get("If-None-Match") == etag:
+                        self.send_response(304)
+                        self.send_header("ETag", etag)
+                        self.end_headers()
+                        return
+                    self._send(200, json.dumps(state, ensure_ascii=False).encode(), "application/json", {"ETag": etag})
+                elif path == "/api/links":
+                    self._send(200, json.dumps(links_status()).encode(), "application/json")
+                elif path.startswith("/api/events/"):
+                    slug = path.rsplit("/", 1)[1]
+                    ep = events_path(slug)
+                    if not ep.exists():
+                        self._send(404, b"{}", "application/json")
+                    else:
+                        self._send(200, ep.read_bytes(), "application/x-ndjson")
+                else:
+                    self._send(404, b"not found", "text/plain")
+            except BrokenPipeError:
+                pass
+
+        def do_POST(self):
+            # /api/restart {slug,label}: run the restart command STORED IN board.json
+            # (trusted, agent-written file) — request only selects which one. 127.0.0.1 only.
+            try:
+                if self.path.split("?")[0] != "/api/restart":
+                    self._send(404, b"not found", "text/plain")
+                    return
+                n = int(self.headers.get("Content-Length", 0))
+                req = json.loads(self.rfile.read(n) or b"{}")
+                b = json.loads(board_path(req.get("slug", "")).read_text())
+                link = next((l for l in b.get("links", {}).get("local", [])
+                             if l["label"] == req.get("label")), None)
+                if not link or not link.get("restart"):
+                    self._send(400, b'{"ok":false,"err":"no restart command stored for this link"}', "application/json")
+                    return
+                import subprocess
+                subprocess.Popen(["/bin/sh", "-c", link["restart"]], start_new_session=True,
+                                 stdout=open("/tmp/pl-restart.log", "ab"), stderr=subprocess.STDOUT)
+                append_event(b["slug"], "note", f"restart issued for '{link['label']}' from the board UI")
+                _links_cache["t"] = 0  # bust probe cache
+                self._send(200, b'{"ok":true}', "application/json")
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "err": str(e)}).encode(), "application/json")
+
+    srv = ThreadingHTTPServer(("127.0.0.1", a.port), H)
+    print(f"ProgressLive serving http://localhost:{a.port}/  (Ctrl-C stops)")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="progress", description=__doc__.splitlines()[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("init", help="register a project")
+    p.add_argument("slug"); p.add_argument("--name"); p.add_argument("--tagline")
+    p.add_argument("--repo"); p.add_argument("--manager"); p.set_defaults(f=cmd_init)
+
+    p = sub.add_parser("update", help="update a phase (creates if missing); auto-appends event; --sub targets a nested subitem")
+    p.add_argument("slug"); p.add_argument("--phase", required=True); p.add_argument("--sub"); p.add_argument("--label")
+    p.add_argument("--pct", type=int); p.add_argument("--status", choices=STATUSES)
+    p.add_argument("--eta"); p.add_argument("--note"); p.add_argument("--here", action="store_true")
+    p.add_argument("--event", help="override the auto event text"); p.set_defaults(f=cmd_update)
+
+    p = sub.add_parser("here", help="move the YOU ARE HERE marker")
+    p.add_argument("slug"); p.add_argument("phase"); p.set_defaults(f=cmd_here)
+
+    p = sub.add_parser("event", help="append a history event")
+    p.add_argument("slug"); p.add_argument("text")
+    p.add_argument("--kind", default="note", choices=KINDS); p.add_argument("--delta")
+    p.set_defaults(f=cmd_event)
+
+    p = sub.add_parser("roster", help="set agents: --set name:model:lane:state (state 'gone' removes)")
+    p.add_argument("slug"); p.add_argument("--set", action="append"); p.add_argument("--clear", action="store_true")
+    p.set_defaults(f=cmd_roster)
+
+    p = sub.add_parser("proof", help="record a verified claim")
+    p.add_argument("slug"); p.add_argument("--claim", required=True); p.add_argument("--cmd")
+    p.add_argument("--result"); p.add_argument("--ref"); p.set_defaults(f=cmd_proof)
+
+    p = sub.add_parser("setjson", help="set kpis|links|version on a board from a JSON string")
+    p.add_argument("slug"); p.add_argument("field"); p.add_argument("json"); p.set_defaults(f=cmd_setjson)
+
+    p = sub.add_parser("board", help="print the board (ANSI)")
+    p.add_argument("slug"); p.set_defaults(f=cmd_board)
+
+    p = sub.add_parser("serve", help="serve site + JSON API")
+    p.add_argument("--port", type=int, default=8177); p.set_defaults(f=cmd_serve)
+
+    a = ap.parse_args()
+    a.f(a)
+
+
+if __name__ == "__main__":
+    main()

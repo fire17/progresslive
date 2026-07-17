@@ -1,0 +1,8 @@
+{
+  "model": "sonnet",
+  "_model_note": "spawn model for the progresslive runner subagent. 'sonnet' = current Sonnet 5. Swap to 'opus'/'haiku' freely. NEVER 'fable' (rule 4). Future harnesses (codex/grok/kimi) land as {\"harness\": \"codex\", ...} — additive.",
+  "effort": "high",
+  "teammate_mode": "tmux",
+  "harness": "claude",
+  "port": 8177
+}

@@ -1,0 +1,156 @@
+{
+ "schema": 1,
+ "slug": "demo",
+ "name": "Demo Project",
+ "tagline": "example board \u2014 every ProgressLive feature on neutral data",
+ "meta": {
+  "updated": "2026-07-17T15:00:00+03:00",
+  "started": "2026-07-17T12:00:00+03:00",
+  "repo": "~/src/demo",
+  "manager": "progresslive runner (demo)"
+ },
+ "here": "BUILD",
+ "phases": [
+  {
+   "key": "PLAN",
+   "label": "Planning + design",
+   "pct": 100,
+   "status": "done",
+   "eta": null,
+   "note": "spec frozen \u2014 commit aaa1111"
+  },
+  {
+   "key": "BUILD",
+   "label": "Core build",
+   "pct": 62,
+   "status": "now",
+   "eta": "~2h",
+   "note": "API done, worker WIP",
+   "subitems": [
+    {
+     "key": "API",
+     "label": "REST API",
+     "pct": 100,
+     "status": "done",
+     "eta": null,
+     "note": "12 endpoints, tests green"
+    },
+    {
+     "key": "WORK",
+     "label": "Background worker",
+     "pct": 55,
+     "status": "now",
+     "eta": "~1h",
+     "note": "queue drain logic in review"
+    },
+    {
+     "key": "UI",
+     "label": "Dashboard UI",
+     "pct": 30,
+     "status": "now",
+     "eta": "~2h",
+     "note": "layout landed, wiring data"
+    }
+   ]
+  },
+  {
+   "key": "TEST",
+   "label": "E2E verification",
+   "pct": 0,
+   "status": "queued",
+   "eta": "after BUILD",
+   "note": ""
+  },
+  {
+   "key": "REVIEW",
+   "label": "Design review",
+   "pct": 0,
+   "status": "blocked",
+   "eta": "on reviewer",
+   "note": "waiting for human sign-off \u2014 honest gate"
+  },
+  {
+   "key": "SHIP",
+   "label": "Release v1.0",
+   "pct": 0,
+   "status": "gated",
+   "eta": "explicit go only",
+   "note": "nothing ships without confirmation"
+  }
+ ],
+ "roster": [
+  {
+   "name": "backend",
+   "model": "opus",
+   "lane": "API + worker",
+   "state": "building"
+  },
+  {
+   "name": "frontend",
+   "model": "sonnet",
+   "lane": "dashboard",
+   "state": "building"
+  },
+  {
+   "name": "progress",
+   "model": "sonnet",
+   "lane": "this board",
+   "state": "building"
+  }
+ ],
+ "proof": [
+  {
+   "claim": "API tests green",
+   "cmd": "pytest api/",
+   "result": "34 passed",
+   "ref": "aaa1111",
+   "ts": "2026-07-17T14:00:00+03:00"
+  },
+  {
+   "claim": "p95 latency in budget",
+   "cmd": "wrk -d30s /api/items",
+   "result": "p95 8.2ms (budget 25ms)",
+   "ref": "perf run",
+   "ts": "2026-07-17T14:30:00+03:00"
+  }
+ ],
+ "kpis": [
+  {
+   "label": "endpoints",
+   "value": "12"
+  },
+  {
+   "label": "tests green",
+   "value": "34"
+  },
+  {
+   "label": "p95 latency",
+   "value": "8.2ms"
+  },
+  {
+   "label": "coverage",
+   "value": "87%"
+  }
+ ],
+ "links": {
+  "local": [
+   {
+    "label": "Demo app",
+    "url": "http://localhost:9000/",
+    "port": 9000,
+    "restart": "cd ~/src/demo && make serve"
+   }
+  ],
+  "published": [
+   {
+    "label": "demo.example.com",
+    "url": "https://demo.example.com/",
+    "note": "staging"
+   }
+  ]
+ },
+ "version": {
+  "published": "v0.9.0",
+  "published_note": "staging channel"
+ }
+}
