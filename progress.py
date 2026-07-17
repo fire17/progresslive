@@ -417,6 +417,31 @@ def cmd_serve(a):
                     self._send(200, json.dumps(state, ensure_ascii=False).encode(), "application/json", {"ETag": etag})
                 elif path == "/api/links":
                     self._send(200, json.dumps(links_status()).encode(), "application/json")
+                elif path == "/api/remote-info" and not remote:
+                    # LOCAL server only (never exposed through the tunnel): current remote
+                    # connection recipe so the local board always shows working values.
+                    info = {"shell": "https://progress.akeyo.io/", "tunnel_url": None,
+                            "tunnel_up": False, "tokens": load_tokens()}
+                    f = Path.home() / ".progresslive" / "tunnel_url"
+                    if f.exists():
+                        info["tunnel_url"] = f.read_text().strip()
+                    else:  # fallback: newest tunnel log
+                        import glob, re
+                        logs = sorted(glob.glob("/tmp/pl-tunnel*.log"), key=os.path.getmtime, reverse=True)
+                        for lg in logs[:3]:
+                            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", open(lg).read())
+                            if m:
+                                info["tunnel_url"] = m.group(0)
+                                break
+                    if info["tunnel_url"]:
+                        try:
+                            import urllib.request
+                            r = urllib.request.urlopen(info["tunnel_url"] + "/api/state", timeout=3)
+                        except Exception as e:
+                            info["tunnel_up"] = getattr(e, "code", None) == 401  # 401 = alive + auth on
+                        else:
+                            info["tunnel_up"] = True
+                    self._send(200, json.dumps(info).encode(), "application/json")
                 elif path.startswith("/api/events/"):
                     slug = path.rsplit("/", 1)[1]
                     ep = events_path(slug)
