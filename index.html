@@ -300,6 +300,12 @@ table.proof td.c-res { color: var(--green); }
   border-radius: 6px; font: 650 10.5px system-ui; padding: 3px 9px; cursor: pointer; flex: none; }
 .chan .rbtn:hover { background: var(--clay-bar); color: var(--bg); }
 .chan .rbtn:disabled { opacity: 0.5; cursor: wait; }
+.obadge { font: 700 9px ui-monospace, monospace; letter-spacing: 0.05em; border-radius: 999px;
+  padding: 1.5px 7px; margin-left: 7px; vertical-align: 2px; }
+.obadge.o-user { color: var(--muted); border: 1px solid var(--faint); }
+.obadge.o-agent { color: oklch(45% 0.2 300); border: 1px solid oklch(60% 0.18 300); }
+.obadge.o-fam { color: var(--green); border: 1px solid var(--green-bar); background: var(--tint); }
+@media (prefers-color-scheme: dark) { .obadge.o-agent { color: oklch(78% 0.14 300); } }
 .sharebig { border: 1px solid var(--green-bar); background: var(--tint); color: var(--green);
   border-radius: 8px; font: 650 12px system-ui; padding: 7px 14px; cursor: pointer; }
 .sharebig:hover { background: var(--green-bar); color: var(--bg); }
@@ -575,16 +581,43 @@ function barHtml(pct, status, extraCls) {
     <b style="--p:${(pct||0)/100}"></b></div>`;
 }
 
+const FLEETF = { type: localStorage.plFType || "all", family: localStorage.plFFam || "all" };
+function setFleetFilter(k, v) {
+  FLEETF[k] = v;
+  localStorage.plFType = FLEETF.type; localStorage.plFFam = FLEETF.family;
+  LAST_HTML = ""; render();
+}
+const ownerOf = b => b.owner || { type: "user", family: null, parent: null };
+const ownerBadges = b => {
+  const o = ownerOf(b);
+  return `<span class="obadge o-${o.type}" data-tip="${o.type === "agent" ? "auto-managed agentic project" : "user-directed project"}">${o.type.toUpperCase()}</span>`
+    + (o.family ? `<span class="obadge o-fam mono" data-tip="project family${o.parent ? " · parent: " + esc(o.parent) : ""}">${esc(o.family)}</span>` : "");
+};
+
 function renderFleet() {
   const entries = Object.entries(STATE.projects);
   document.title = "ProgressLive — fleet";
   if (!entries.length)
     return `<div class="empty">no projects yet<br><code>python3 progress.py init &lt;slug&gt; --name "…"</code></div>`;
-  const rows = entries.map(([slug, {board: b, events}]) => {
+  const fams = [...new Set(entries.map(([, {board}]) => ownerOf(board).family).filter(Boolean))].sort();
+  const shown = entries.filter(([, {board}]) => {
+    const o = ownerOf(board);
+    return (FLEETF.type === "all" || o.type === FLEETF.type) &&
+           (FLEETF.family === "all" || o.family === FLEETF.family);
+  });
+  const filters = `<div class="chips" style="margin-bottom:18px">
+    ${["all", "user", "agent"].map(t => `<button class="chip ${FLEETF.type === t ? "on" : ""}"
+      onclick="setFleetFilter('type','${t}')">${t.toUpperCase()}</button>`).join("")}
+    ${fams.length ? `<span style="color:var(--faint)">|</span>` : ""}
+    ${fams.map(f => `<button class="chip mono ${FLEETF.family === f ? "on" : ""}"
+      onclick="setFleetFilter('family', FLEETF.family === '${esc(f)}' ? 'all' : '${esc(f)}')">${esc(f)}</button>`).join("")}
+    ${(FLEETF.type !== "all" || FLEETF.family !== "all") ? `<span class="curl" style="font-size:11px">${shown.length}/${entries.length} shown</span>` : ""}
+  </div>`;
+  const rows = shown.map(([slug, {board: b, events}]) => {
     const ov = overall(b), last = events[events.length - 1];
     const here = b.phases.find(p => p.key === b.here);
     return `<li><a href="#/${esc(slug)}">
-      <span><span class="pname">${esc(b.name)}</span><span class="ptag">${esc(b.tagline)}</span></span>
+      <span><span class="pname">${esc(b.name)}${ownerBadges(b)}</span><span class="ptag">${esc(b.tagline)}</span></span>
       <span class="fbar">${barHtml(ov, "now", "")}</span>
       <span class="pmeta mono"><b>${ov}%</b></span>
       <span class="lastev" data-tip="${last ? esc(last.text) : ""}">${here ? `<b>▶ ${esc(here.label)}</b> · ` : ""}${last ? linkify(last.text) : "no events"}${unreadCount(slug, events) ? `<span class="unread">+${unreadCount(slug, events)} new</span>` : ""}</span>
@@ -594,7 +627,9 @@ function renderFleet() {
   }).join("");
   return `<h1 class="view-title">All projects</h1>
     <p class="view-sub">Live boards, one per build. Click through for phases, agents, proof, and full history.</p>
-    <ul class="fleet">${rows}</ul>`;
+    ${filters}
+    <ul class="fleet">${rows}</ul>
+    ${!shown.length ? `<div class="empty">no projects match this filter</div>` : ""}`;
 }
 
 function renderProject(slug) {
@@ -836,6 +871,7 @@ function stripHtml(slug, p, b, ov) {
         ${!locals && !pubs ? `<span class="chan" style="color:var(--muted)">no channels registered</span>` : ""}</div>
     </div>
     <div class="strip-build mono">
+      <span>${ownerBadges(b)}</span>
       <span>local <span data-localver="${esc(slug)}">${lv ? `<b>${esc(lv)}</b>` : "—"}</span></span>
       <span>published ${V.published ? `<b>${linkify(V.published)}</b>` : `<span data-tip="${esc(V.published_note || "")}">${linkify(V.published_note || "none")}</span>`}</span>
       <span style="margin-left:auto">manager: ${esc(b.meta.manager || "—")}</span>
