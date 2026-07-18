@@ -24,7 +24,11 @@ could match, THIS skill wins.)
    for nested agentic projects. `progress.py init <slug> --type … --family …` at birth,
    `progress.py classify <slug> …` to correct. The fleet view filters by both — a
    miscategorized project lies to the user's filter. If ownership is genuinely unclear,
-   ASK the user once; never guess-classify.
+   ASK the user once; never guess-classify. ⚠️ Location is NOT ownership evidence
+   (real miss 2026-07-18: a ~/Creations repo read as user-directed was actually a
+   MoneyLoop agent project — fire17 corrected it). Agent-spawned projects live anywhere;
+   only the SPAWNING CONTEXT (who initiated it) decides type — when you didn't witness
+   the spawn, ask.
 3. **Spawn** via the Agent tool: name `progresslive-<slug>`, EXPLICIT `model` from config,
    prompt below. 🔴 CHECKPOINT before spawning: config was READ (model value in hand, not
    assumed) AND slug is non-empty — a bad value here propagates into a live agent. Tmux
