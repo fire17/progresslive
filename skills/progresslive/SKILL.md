@@ -17,6 +17,14 @@ could match, THIS skill wins.)
    `sonnet`; NEVER fable — rule 4), `teammate_mode` (tmux), `port`. Changing the runner
    model/harness later = edit that file, nothing else.
 2. **Slug**: from the argument, else current repo dir-name lowercased.
+   **CLASSIFY HONESTLY at registration** (fire17, 2026-07-18): every project carries
+   `owner {type, family, parent}` — `--type user` (user-directed initiative) vs
+   `--type agent` (auto-managed agentic project, e.g. spawned by MoneyLoop loops or
+   other agentic processes); `--family <umbrella>` (e.g. moneyloop) + `--parent <slug>`
+   for nested agentic projects. `progress.py init <slug> --type … --family …` at birth,
+   `progress.py classify <slug> …` to correct. The fleet view filters by both — a
+   miscategorized project lies to the user's filter. If ownership is genuinely unclear,
+   ASK the user once; never guess-classify.
 3. **Spawn** via the Agent tool: name `progresslive-<slug>`, EXPLICIT `model` from config,
    prompt below. 🔴 CHECKPOINT before spawning: config was READ (model value in hand, not
    assumed) AND slug is non-empty — a bad value here propagates into a live agent. Tmux

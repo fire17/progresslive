@@ -86,6 +86,8 @@ def cmd_init(a):
     board = {
         "schema": 1, "slug": a.slug, "name": a.name or a.slug, "tagline": a.tagline or "",
         "meta": {"updated": now_iso(), "started": now_iso(), "repo": a.repo or "", "manager": a.manager or ""},
+        "owner": {"type": getattr(a, "type", None) or "user",
+                  "family": getattr(a, "family", None), "parent": getattr(a, "parent", None)},
         "here": None, "phases": [], "roster": [], "proof": [],
     }
     atomic_write(p, json.dumps(board, indent=1, ensure_ascii=False) + "\n")
@@ -154,6 +156,23 @@ def cmd_update(a):
                  + (f" · eta {t['eta']}" if t.get("eta") else ""), delta=delta)
     print(f"{a.slug}/{name}: pct={t['pct']} status={t['status']} eta={t['eta']}"
           + (f" | phase rollup {ph['pct']}%" if getattr(a, "sub", None) else ""))
+
+
+def cmd_classify(a):
+    """Honest project taxonomy: type user|agent (who OWNS the initiative — fire17-directed
+    = user; auto-managed agentic = agent), family (umbrella like 'moneyloop'), parent slug."""
+    if a.type and a.type not in ("user", "agent"):
+        sys.exit("type must be user|agent")
+    b = load_board(a.slug)
+    o = b.setdefault("owner", {"type": "user", "family": None, "parent": None})
+    if a.type:
+        o["type"] = a.type
+    if a.family is not None:
+        o["family"] = a.family or None
+    if a.parent is not None:
+        o["parent"] = a.parent or None
+    save_board(a.slug, b)
+    print(f"{a.slug}: type={o['type']} family={o['family']} parent={o['parent']}")
 
 
 def cmd_here(a):
@@ -376,8 +395,8 @@ def assemble_state(tail=200):
 
 
 def cmd_setjson(a):
-    if a.field not in ("kpis", "links", "version"):
-        sys.exit("field must be kpis|links|version")
+    if a.field not in ("kpis", "links", "version", "tagline"):
+        sys.exit("field must be kpis|links|version|tagline")
     b = load_board(a.slug)
     b[a.field] = json.loads(a.json)
     save_board(a.slug, b)
@@ -634,7 +653,15 @@ def main():
 
     p = sub.add_parser("init", help="register a project")
     p.add_argument("slug"); p.add_argument("--name"); p.add_argument("--tagline")
-    p.add_argument("--repo"); p.add_argument("--manager"); p.set_defaults(f=cmd_init)
+    p.add_argument("--repo"); p.add_argument("--manager")
+    p.add_argument("--type", choices=("user", "agent"), help="honest ownership: user-directed vs auto-managed agentic")
+    p.add_argument("--family", help="project family umbrella, e.g. moneyloop")
+    p.add_argument("--parent", help="parent project slug (nested agentic projects)")
+    p.set_defaults(f=cmd_init)
+
+    p = sub.add_parser("classify", help="set/update owner taxonomy: --type user|agent --family X --parent Y")
+    p.add_argument("slug"); p.add_argument("--type", choices=("user", "agent"))
+    p.add_argument("--family"); p.add_argument("--parent"); p.set_defaults(f=cmd_classify)
 
     p = sub.add_parser("update", help="update a phase (creates if missing); auto-appends event; --sub targets a nested subitem")
     p.add_argument("slug"); p.add_argument("--phase", required=True); p.add_argument("--sub"); p.add_argument("--label")
@@ -672,7 +699,7 @@ def main():
     p.add_argument("slug"); p.add_argument("--claim", required=True); p.add_argument("--cmd")
     p.add_argument("--result"); p.add_argument("--ref"); p.set_defaults(f=cmd_proof)
 
-    p = sub.add_parser("setjson", help="set kpis|links|version on a board from a JSON string")
+    p = sub.add_parser("setjson", help="set kpis|links|version|tagline on a board from a JSON string")
     p.add_argument("slug"); p.add_argument("field"); p.add_argument("json"); p.set_defaults(f=cmd_setjson)
 
     p = sub.add_parser("board", help="print the board (ANSI)")

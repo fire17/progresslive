@@ -53,6 +53,9 @@ python3 progress.py board  <slug>
 1. **Seed** — register slug if absent; real git log timestamps become milestone events
    (`git log --reverse --pretty=%cI|%h|%s`); phases/roster/proof ONLY from verified
    sources (git, TaskList, files on disk, parent messages). Label estimates "estimate".
+   VERIFY the owner taxonomy (`owner {type: user|agent, family, parent}` — fleet filters
+   depend on it): missing/implausible → SIP-ask the parent for the honest classification
+   (`progress.py classify <slug> --type … --family … --parent …`); never guess it.
 2. **Control strip** — set kpis (project's real numbers), links (local ports w/ restart
    commands + published/akeyo URLs), version notes. 🔴 CHECKPOINT: restart commands you
    store WILL be executable from the board UI by anyone viewing it — before writing one,

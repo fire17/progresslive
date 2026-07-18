@@ -15,10 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import progress as P
 
 TOOLS = [
-    {"name": "progress_init", "description": "Register a project board",
+    {"name": "progress_init", "description": "Register a project board. CLASSIFY HONESTLY: type 'user' (user-directed) vs 'agent' (auto-managed agentic project); family = umbrella like 'moneyloop'; parent = enclosing project slug. Fleet filters depend on this — never guess; ask the user if unclear",
      "inputSchema": {"type": "object", "properties": {
          "slug": {"type": "string"}, "name": {"type": "string"}, "tagline": {"type": "string"},
-         "repo": {"type": "string"}, "manager": {"type": "string"}}, "required": ["slug"]}},
+         "repo": {"type": "string"}, "manager": {"type": "string"},
+         "type": {"type": "string", "enum": ["user", "agent"]},
+         "family": {"type": "string"}, "parent": {"type": "string"}}, "required": ["slug"]}},
     {"name": "progress_update", "description": "Update a phase (creates if missing); auto-appends a history event. status: done|now|queued|blocked|gated. Pass 'sub' to target a nested subitem (phase pct auto-rolls-up from subitem mean)",
      "inputSchema": {"type": "object", "properties": {
          "slug": {"type": "string"}, "phase": {"type": "string"}, "sub": {"type": "string"},
@@ -64,6 +66,7 @@ def call(name, a):
         b = {"schema": 1, "slug": slug, "name": a.get("name", slug), "tagline": a.get("tagline", ""),
              "meta": {"updated": P.now_iso(), "started": P.now_iso(),
                       "repo": a.get("repo", ""), "manager": a.get("manager", "mcp")},
+             "owner": {"type": a.get("type", "user"), "family": a.get("family"), "parent": a.get("parent")},
              "here": None, "phases": [], "roster": [], "proof": []}
         P.atomic_write(P.board_path(slug), json.dumps(b, indent=1) + "\n")
         P.events_path(slug).touch()

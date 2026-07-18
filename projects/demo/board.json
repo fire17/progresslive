@@ -152,5 +152,10 @@
  "version": {
   "published": "v0.9.0",
   "published_note": "staging channel"
+ },
+ "owner": {
+  "type": "agent",
+  "family": "demo-fleet",
+  "parent": null
  }
 }
