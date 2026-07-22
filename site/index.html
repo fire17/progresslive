@@ -159,11 +159,12 @@ section.blk { margin-bottom: 40px; }
 .phases { list-style: none; padding: 0; }
 .phase {
   display: grid; align-items: center;
-  grid-template-columns: 6.5ch minmax(110px, 0.9fr) minmax(120px, 22ch) 4.5ch 7.5ch minmax(8ch, 14ch) 1.3fr;
+  grid-template-columns: 13ch minmax(110px, 0.9fr) minmax(120px, 22ch) 4.5ch 7.5ch minmax(8ch, 14ch) 1.3fr;
   gap: 0 14px; padding: 5px 10px; border-radius: 6px; min-height: 28px;
 }
 .phase.here { background: var(--tint); }
-.phase .key { font-weight: 700; font-size: 12.5px; white-space: nowrap; }
+.phase .key { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; }
 .phase.here .key { color: var(--green); }
 .phase .lbl { font-size: 13px; display: flex; align-items: center; min-width: 0; }
 .phase .lbl .lbltxt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -382,7 +383,8 @@ table.proof td.c-res { color: var(--green); }
   .fleet .spark { display: none; }   /* pulse lives on the project page; row stays scannable */
 
   /* phase row → two-line stack: [key · label · chips · pct] / [bar] / [meta] */
-  .phase { grid-template-columns: auto 1fr auto; gap: 3px 10px; padding: 10px 8px; min-height: 44px; }
+  .phase { grid-template-columns: minmax(0, auto) 1fr auto; gap: 3px 10px; padding: 10px 8px; min-height: 44px; }
+  .phase .key { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
   .phase .key { grid-column: 1; }
   .phase .lbl { grid-column: 2; }
   .phase .pct { grid-column: 3; font-size: 14px; font-weight: 650; color: var(--ink); }
@@ -965,30 +967,40 @@ function sparkHtml(events, w, h) {
 
 /* instant tooltip for truncated text (or forced via buttons) */
 const tipEl = document.createElement("div"); tipEl.id = "tip"; document.body.appendChild(tipEl);
-addEventListener("mouseover", e => {
-  const el = e.target.closest("[data-tip]");
-  if (!el || !el.dataset.tip) { tipEl.classList.remove("on"); return; }
-  const truncated = el.scrollWidth > el.clientWidth + 1;
-  if (!truncated && !el.matches("button, .ets") ) { tipEl.classList.remove("on"); return; }
-  tipEl.textContent = el.dataset.tip;
+const isClipped = el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+/* what tip to show for a hovered target: explicit data-tip (when truncated or always-tip),
+   else ANY ancestor whose own text is visually clipped → its full text. Universal. */
+function tipFor(target) {
+  const tagged = target.closest("[data-tip]");
+  if (tagged && tagged.dataset.tip && (isClipped(tagged) || tagged.matches("button, .ets, .newchip, .obadge, [data-force-tip]")))
+    return { text: tagged.dataset.tip, el: tagged };
+  for (let el = target; el && el !== document.body; el = el.parentElement) {
+    if (el.nodeType === 1 && el.firstChild && isClipped(el)) {
+      const t = (el.textContent || "").trim();
+      if (t) return { text: t, el };
+    }
+  }
+  return tagged && tagged.dataset.tip ? { text: tagged.dataset.tip, el: tagged } : null;
+}
+function showTip(hit) {
+  tipEl.textContent = hit.text;
   tipEl.classList.add("on");
-  const r = el.getBoundingClientRect(), tw = Math.min(tipEl.offsetWidth, innerWidth - 16);
-  let x = Math.max(8, Math.min(r.left, innerWidth - tw - 8));
-  let y = r.bottom + 8;
-  if (y + tipEl.offsetHeight > innerHeight - 8) y = r.top - tipEl.offsetHeight - 8;
-  tipEl.style.left = x + "px"; tipEl.style.top = y + "px";
+  const r = hit.el.getBoundingClientRect(), tw = Math.min(tipEl.offsetWidth, innerWidth - 16);
+  tipEl.style.left = Math.max(8, Math.min(r.left, innerWidth - tw - 8)) + "px";
+  tipEl.style.top = (r.bottom + 8 + tipEl.offsetHeight > innerHeight - 8 ? r.top - tipEl.offsetHeight - 8 : r.bottom + 8) + "px";
+}
+addEventListener("mouseover", e => {
+  const hit = tipFor(e.target);
+  if (hit) showTip(hit); else tipEl.classList.remove("on");
 });
 addEventListener("scroll", () => tipEl.classList.remove("on"), true);
-/* touch: tap a non-interactive data-tip element → show the tip briefly (hover has no finger) */
+/* touch: tap clipped/tipped text → show it briefly (hover has no finger) */
 addEventListener("click", e => {
   if (!matchMedia("(hover: none)").matches) return;
-  const el = e.target.closest("[data-tip]");
-  if (!el || !el.dataset.tip || el.closest("a, button, .rbtn, .sharebig")) return;
-  tipEl.textContent = el.dataset.tip;
-  tipEl.classList.add("on");
-  const r = el.getBoundingClientRect();
-  tipEl.style.left = Math.max(8, Math.min(r.left, innerWidth - Math.min(tipEl.offsetWidth, innerWidth - 16) - 8)) + "px";
-  tipEl.style.top = (r.bottom + 8 + tipEl.offsetHeight > innerHeight ? r.top - tipEl.offsetHeight - 8 : r.bottom + 8) + "px";
+  if (e.target.closest("a, button, .rbtn, .sharebig")) return;
+  const hit = tipFor(e.target);
+  if (!hit) return;
+  showTip(hit);
   clearTimeout(tipEl._t);
   tipEl._t = setTimeout(() => tipEl.classList.remove("on"), 2600);
 });
